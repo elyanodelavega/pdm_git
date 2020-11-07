@@ -220,6 +220,7 @@ class Forecast:
         
         predictions = np.concatenate(predictions_unscaled)
         
+        
         if dataframe:
             return self.predictions_to_df(time, predictions)
         
@@ -256,11 +257,12 @@ class Forecast:
             
             indices = [time + pd.Timedelta(hours = self.t_res * i) for i in range(len(results_flat))]
             
-            col_names = self.pred_variable + '_forecast'
+            col_names = [self.pred_variable + '_forecast']
         else:
             indices = [time + pd.Timedelta(hours = self.t_res * i) for i in range(data.shape[0])]
             
             col_names = [self.pred_variable + '_forecast_' + str(i) for i in range(data.shape[1])]
+        
         
         df = pd.DataFrame(data = data, index = indices, columns = col_names)
         
@@ -413,4 +415,4 @@ def df_predictions_uncertainty(data_EV, time, n_hour_future, forecast_array,
             
         return df
 
-    
+

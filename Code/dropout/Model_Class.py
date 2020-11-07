@@ -13,24 +13,25 @@ import pandas as pd
 
 class EV:
     def __init__(self, BC_EV = 40e3, eta_EV_ch = 0.9, 
-                        P_EV_chmax = 5e3, SOC_min = 0.2, SOC_max = 1, V2G = False ):
+                        P_EV_chmax = 5e3, SOC_min = 0.2, SOC_max = 1,SOC_min_departure = 0.8, V2G = False ):
         
         self.BC_EV = BC_EV
         self.eta_EV_ch = eta_EV_ch
         self.P_EV_chmax = P_EV_chmax
         self.SOC_min = SOC_min
         self.SOC_max = SOC_max
+        self.SOC_min_departure = SOC_min_departure
         
         
 class House:
-    def __init__(self, installed_PV = 10000, pv_capacity = 3000, **kwargs):
+    def __init__(self, installed_PV = 10000, pv_capacity = 2835, **kwargs):
         self.installed_PV = installed_PV
         self.pv_capacity = pv_capacity
         self.scale_PV = float(installed_PV/pv_capacity)
         
 class Model:
     
-    def __init__(self, name, data_full, t_start, t_res, House, EV):
+    def __init__(self, name, data_EV, t_start, t_res, House, EV):
 
         self.name = name
         
@@ -38,7 +39,7 @@ class Model:
 
         self.set_EV_parameters(EV)
         
-        self.data_full = data_full
+        self.data_EV = data_EV
         
         self.col_names = ['pv', 'pv_forecast', 'load', 'pv_ev', 'pv_load', 'grid_ev', 'grid_load',
        'soc', 'avail']
@@ -48,10 +49,12 @@ class Model:
         t_previous = t_start - pd.Timedelta(hours = t_res)
         
         previous_decision = {self.col_names[i]: [0] for i in range(len(self.col_names))}
-        previous_decision['soc'] = self.data_full.loc[t_previous, 'EV_SOC']
+        previous_decision['soc'] = self.data_EV.loc[t_previous, 'EV_SOC']
         
         self.decisions = pd.DataFrame(data = previous_decision, index = [t_previous])
         
+        self.constraints_violation = {}
+
         
     def set_house_parameter(self, House):
         self.scale_PV = House.scale_PV
@@ -62,7 +65,7 @@ class Model:
         self.P_EV_chmax = EV.P_EV_chmax
         self.SOC_min = EV.SOC_min
         self.SOC_max = EV.SOC_max
-        
+        self.SOC_min_departure = EV.SOC_min_departure
         
         
     def set_parameters(self):
@@ -71,7 +74,11 @@ class Model:
         
         self.prepare_time()
         
-        self.P_PV = {t: list(self.predictions.loc[t]) for t in self.time_horizon}
+        if self.stochastic:
+            self.P_PV = {t: list(self.predictions.loc[t]) for t in self.time_horizon}
+        else:
+            self.P_PV = {t: [self.predictions.loc[t]] for t in self.time_horizon}
+            
         self.P_PV[self.t_decision] = self.realization
         
         self.load = self.data.load
@@ -81,7 +88,7 @@ class Model:
         SOC_ini_fixed[self.t_previous] = self.decisions.loc[self.t_previous, 'soc']
         
         for t in self.T_away:
-            SOC_ini_fixed[t] = self.data_full.loc[t, 'EV_SOC']
+            SOC_ini_fixed[t] = self.data_EV.loc[t, 'EV_SOC']
         
         # for t in self.T_departure:
             # SOC_ini_fixed[t] = self.SOC_max 
@@ -94,17 +101,26 @@ class Model:
         
         t_end = predictions.index[-1]
         
-        self.realization = self.data_full.loc[t_decision, pred_variable]
+        self.realization = self.data_EV.loc[t_decision, pred_variable]
         
-        self.predictions = predictions
+        if self.forecasting:
+        
+            self.predictions = predictions*self.scale_PV
+            
+        else:
+            self.predictions = predictions
+        
+        if self.stochastic:
+            self.n_samples = predictions.shape[1]
 
-        self.n_samples = predictions.shape[1]
-        
+        else:
+            self.n_samples = 1
+
         self.range_samples = range(self.n_samples)
         
         self.t_decision = t_decision
         
-        self.data = self.data_full[t_decision:t_end]
+        self.data = self.data_EV[t_decision:t_end]
         
         self.data.drop(pred_variable, axis = 1, inplace = True)           
         
@@ -161,7 +177,6 @@ class Model:
     def add_first_stage_constraints(self):
         
         t = self.t_decision
-        print(t)
         
         self.Grid_balance_1 = self.m.addConstr(self.P_PV[t] + self.y_grid_1 * self.P_grid_bought_1 - 
                                     (1-self.y_grid_1) * self.P_grid_sold_1 
@@ -187,7 +202,7 @@ class Model:
                                       (self.P_EV_1/self.BC_EV) * self.eta_EV_ch)
             
             if t in self.T_departure:
-                self.SOC_dep_1 = self.m.addConstr(self.SOC_1 >= self.SOC_max)
+                self.SOC_dep_1 = self.m.addConstr(self.SOC_1 >= self.SOC_min_departure)
         
         
     def add_second_stage_variables(self):
@@ -235,17 +250,23 @@ class Model:
                                   for t in range(1,len(self.time_vector)) for i in self.range_samples 
                                   if self.time_vector[t] not in self.T_away)
         
-        self.SOC_dep = self.m.addConstrs(self.SOC[t,i] >= self.SOC_max for t in self.T_departure for i in self.range_samples)
+        self.SOC_dep = self.m.addConstrs(self.SOC[t,i] >= self.SOC_min_departure for t in self.T_departure for i in self.range_samples)
         
         self.SOC_fixed = self.m.addConstrs(self.SOC[t,i] == self.SOC_ini_fixed[t] for t in self.SOC_ini_fixed.keys() 
                                            for i in self.range_samples if t > self.t_previous)
         
         self.SOC_continuity = self.m.addConstrs(self.SOC[self.time_vector[0],j] == self.SOC_1 for j in self.range_samples)
         
-    def optimize(self, t_decision, pred_variable, predictions):
+    def optimize(self, t_decision, pred_variable, predictions, forecasting = True, method = None, parameters = None):
         
-        self.m = gp.Model(self.name)
-
+        if len(predictions.shape) == 1:
+            self.stochastic = False
+            self.m = gp.Model(self.name+'_deterministic')
+        else:
+            self.stochastic = True
+            self.m = gp.Model(self.name+'_stochastic')
+        
+        self.forecasting = forecasting
         self.prepare_data(t_decision, predictions, pred_variable)
         self.set_parameters()
         # first_stage
@@ -255,21 +276,32 @@ class Model:
         self.add_second_stage_variables()
         self.add_second_stage_constraints()
         
-        self.E_bought = (gp.quicksum(self.P_grid_bought)/self.n_samples)
+        if method == None or method == 'deterministic' or method == 'expected value':
+            self.E_bought = (gp.quicksum(self.P_grid_bought)/self.n_samples)
+            
+        elif method == 'CVaR':
+            alpha = parameters['alpha']
+            self.E_bought = (gp.quicksum(self.P_grid_bought)/((1-alpha) *self.n_samples))
         
-        # if goal is PV self consumption
-        #self.E_sold = gp.quicksum(self.P_grid_sold)
+        elif method == 'Markowitz':
+            alpha = parameters['alpha']
+            beta = parameters['beta']
+            self.E_bought = (gp.quicksum(self.P_grid_bought)*beta/((1-alpha( *self.n_samples))))
         
         self.m.setObjective(self.P_grid_bought_1 + self.E_bought)
         
         self.m.write('model_1.lp')
         self.m.optimize()
         
-        # if self.m.status == GRB.INFEASIBLE:
-        #     # self.m.feasRelaxS(0, False, False,True)
-        #     # self.m.optimize()
+        if self.m.status == GRB.INFEASIBLE:
+            print('Model infasible, relaxing SOC constraint')
+            self.m.feasRelaxS(2, False, False,True)
+            self.m.optimize()
+            self.constraints_violation[t_decision] = self.SOC_1
             
         self.update_decisions()
+        
+        self.cost = self.m.ObjVal
         
     def update_decisions(self):
         
@@ -308,26 +340,34 @@ class Model:
             
         return df_SOC
     
-    def results(self, plot_results = True):
+    def results_determinitic(self):
         
-        PV = list(self.data['PV'])
-        PV_forecast = list(self.PV_forecast)
+        PV = self.realization
+        PV.extend(list(self.predictions))
+        
         Load = list(self.load)
         EV_availability = list(self.EV_Availability)
         
-        PV_2EV = [self.P_PV_2EV[t].x for t in self.time_vector]
-        PV_2L = [self.P_PV_2L[t].x for t in self.time_vector]
-        PV_2G = [self.P_PV_2G[t].x for t in self.time_vector]
+        PV_2EV = [self.P_PV_2EV_1.x]
+        PV_2EV.extend([self.P_PV_2EV[t,0].x for t in self.time_horizon])
+        PV_2L = [self.P_PV_2L_1.x]
+        PV_2L.extend([self.P_PV_2L[t,0].x for t in self.time_horizon])
+        PV_2G = [self.P_PV_2G_1.x]
+        PV_2G.extend([self.P_PV_2G[t,0].x for t in self.time_horizon])
         
-        Grid_2EV = [self.P_grid_2EV[t].x for t in self.time_vector]
-        Grid_2L = [self.P_grid_2L[t].x for t in self.time_vector]
-        Grid_bought = [self.P_grid_bought[t].x for t in self.time_vector]
+        Grid_2EV = [self.P_grid_2EV_1.x]
+        Grid_2EV.extend([self.P_grid_2EV[t,0].x for t in self.time_horizon])
+        Grid_2L = [self.P_grid_2L_1.x]
+        Grid_2L.extend([self.P_grid_2L[t,0].x for t in self.time_horizon])
+
+        Grid_bought = [self.P_grid_bought_1.x]
+        Grid_bought.extend([self.P_grid_bought[t,0].x for t in self.time_horizon])
         
-        SOC_f = [self.SOC[t].x for t in self.time_vector]
+        
+        SOC_f = [self.SOC[t,0].x for t in self.time_vector]
         
         dataset = pd.DataFrame(index = self.time_vector)
         dataset['pv'] = PV
-        dataset['pv_forecast'] = PV_forecast
         dataset['load'] = Load
         dataset['pv_ev'] = PV_2EV
         dataset['pv_load'] = PV_2L
@@ -335,11 +375,7 @@ class Model:
         dataset['grid_load'] = Grid_2L
         dataset['soc'] = SOC_f
         dataset['avail'] = EV_availability
-
-        decision = pd.Series(dataset.loc[self.t_decision], name = self.t_decision)
-        
-        self.decisions = self.decisions.append(decision, ignore_index=False)
             
         return dataset
         
-
+    

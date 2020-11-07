@@ -179,9 +179,9 @@ def plot_MPC_uncertainty(decisions, SOC, predictions, load, figname = None):
     axes[0].fill_between(x[:n], decisions['pv'], color=palette[0], alpha=0.5)
     axes[0].plot(x[:n], decisions['pv'], color=palette[0], label='Actual PV')
     
-    low_PV, med_PV, high_PV = confidence_interval(predictions.head(m), 1)
-    axes[0].fill_between(x[n-1:n+m-1], low_PV[:m], high_PV[:m], color=palette[0], alpha=0.5, label='Expected PV')
-    axes[0].plot(x[n-1:n+m-1], med_PV[:m], color=palette[0])
+    low_PV, med_PV, high_PV = confidence_interval(predictions.head(m), 0.8)
+    axes[0].fill_between(x[n-1:n+m-1], low_PV[:m], high_PV[:m], color=palette[0], alpha=0.5, hatch = '//', label='Expected PV')
+    #axes[0].plot(x[n-1:n+m-1], med_PV[:m], color=palette[0])
     
 
     axes[0].axvline(x=n-1, color = 'black')
