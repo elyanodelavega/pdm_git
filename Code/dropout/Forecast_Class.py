@@ -363,10 +363,13 @@ class Forecast:
 
         comparison_unscaled = self.scaler.inverse_transform(comparison_unscaled)
         
-        
+        plt.figure(figsize=(10,7))
         plt.plot(predictions_scaled[:,0], label = 'Predicted')
         plt.plot(comparison_unscaled[self.period_past:-self.period_future,self.pred_pos],label = 'Expected')
+        plt.annotate('Model Settings: ' + 'Epochs: 50, ' + 'Batchsize: 72, ' + 'Optimizer: Adam, '+ f'MSE: 0.0059', xy=(0.06, .015),  xycoords='figure fraction', horizontalalignment='left', verticalalignment='bottom', fontsize=13)
         plt.legend()
+        plt.xlabel('Hours')
+        plt.ylabel('Watts')
         
         if title is None:
             title = f'Model test results for {self.pred_variable}'

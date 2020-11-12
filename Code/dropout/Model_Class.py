@@ -9,6 +9,7 @@ Created on Mon Nov  2 12:29:01 2020
 import gurobipy as gp
 from gurobipy import GRB
 import pandas as pd
+import numpy as np
 
 
 class EV:
@@ -74,10 +75,8 @@ class Model:
         
         self.prepare_time()
         
-        if self.stochastic:
-            self.P_PV = {t: list(self.predictions.loc[t]) for t in self.time_horizon}
-        else:
-            self.P_PV = {t: [self.predictions.loc[t]] for t in self.time_horizon}
+        self.P_PV = {t: list(self.predictions.loc[t]) for t in self.time_horizon}
+
             
         self.P_PV[self.t_decision] = self.realization
         
@@ -109,12 +108,8 @@ class Model:
             
         else:
             self.predictions = predictions
-        
-        if self.stochastic:
-            self.n_samples = predictions.shape[1]
 
-        else:
-            self.n_samples = 1
+        self.n_samples = predictions.shape[1]
 
         self.range_samples = range(self.n_samples)
         
@@ -257,51 +252,57 @@ class Model:
         
         self.SOC_continuity = self.m.addConstrs(self.SOC[self.time_vector[0],j] == self.SOC_1 for j in self.range_samples)
         
-    def optimize(self, t_decision, pred_variable, predictions, forecasting = True, method = None, parameters = None):
+    def optimize(self, t_decision, pred_variable, predictions, forecasting = True, method = 'deterministic', parameters = None, OutputFlag = 0):
         
-        if len(predictions.shape) == 1:
-            self.stochastic = False
-            self.m = gp.Model(self.name+'_deterministic')
-        else:
-            self.stochastic = True
-            self.m = gp.Model(self.name+'_stochastic')
+        with gp.Env(empty=True) as env:
+            env.setParam('OutputFlag', OutputFlag)
+            env.start()
+            with gp.Model(env=env) as self.m:
         
-        self.forecasting = forecasting
-        self.prepare_data(t_decision, predictions, pred_variable)
-        self.set_parameters()
-        # first_stage
-        self.add_first_stage_variables()
-        self.add_first_stage_constraints()
-        
-        self.add_second_stage_variables()
-        self.add_second_stage_constraints()
-        
-        if method == None or method == 'deterministic' or method == 'expected value':
-            self.E_bought = (gp.quicksum(self.P_grid_bought)/self.n_samples)
-            
-        elif method == 'CVaR':
-            alpha = parameters['alpha']
-            self.E_bought = (gp.quicksum(self.P_grid_bought)/((1-alpha) *self.n_samples))
-        
-        elif method == 'Markowitz':
-            alpha = parameters['alpha']
-            beta = parameters['beta']
-            self.E_bought = (gp.quicksum(self.P_grid_bought)*beta/((1-alpha( *self.n_samples))))
-        
-        self.m.setObjective(self.P_grid_bought_1 + self.E_bought)
-        
-        self.m.write('model_1.lp')
-        self.m.optimize()
-        
-        if self.m.status == GRB.INFEASIBLE:
-            print('Model infasible, relaxing SOC constraint')
-            self.m.feasRelaxS(2, False, False,True)
-            self.m.optimize()
-            self.constraints_violation[t_decision] = self.SOC_1
-            
-        self.update_decisions()
-        
-        self.cost = self.m.ObjVal
+                if predictions.shape[1] == 1:
+                    self.stochastic = False
+                    self.m = gp.Model(self.name+'_deterministic')
+                else:
+                    self.stochastic = True
+                    self.m = gp.Model(self.name+'_stochastic')
+                
+                self.forecasting = forecasting
+                self.prepare_data(t_decision, predictions, pred_variable)
+                self.set_parameters()
+                # first_stage
+                self.add_first_stage_variables()
+                self.add_first_stage_constraints()
+                
+                self.add_second_stage_variables()
+                self.add_second_stage_constraints()
+                
+                if  method == 'deterministic' or method == 'day_ahead' or method == 'expected value':
+                    self.E_bought = (gp.quicksum(self.P_grid_bought)/self.n_samples)
+                    
+                elif method == 'CVaR':
+                    alpha = parameters['alpha']
+                    self.E_bought = (gp.quicksum(self.P_grid_bought)/((1-alpha) *self.n_samples))
+                
+                elif method == 'Markowitz':
+                    alpha = parameters['alpha']
+                    beta = parameters['beta']
+                    self.E_bought = (gp.quicksum(self.P_grid_bought)*beta/((1-alpha( *self.n_samples))))
+                
+                self.m.setObjective(self.P_grid_bought_1 + self.E_bought)
+                
+                self.m.write('model_1.lp')
+                self.m.optimize()
+                
+                if self.m.status == GRB.INFEASIBLE:
+                    print('Model infasible, relaxing SOC constraint')
+                    self.m.feasRelaxS(2, False, False,True)
+                    self.m.optimize()
+                    self.constraints_violation[t_decision] = self.SOC_1
+                    
+                self.update_decisions()
+
+                self.cost = self.m.ObjVal
+
         
     def update_decisions(self):
         
@@ -329,7 +330,10 @@ class Model:
         decision = pd.Series(dataset.loc[self.t_decision], name = self.t_decision)
         
         self.decisions = self.decisions.append(decision, ignore_index=False)
-            
+    
+    def model_decisions(self):
+        
+        return self.decisions[1:]
     
     def predictions_SOC(self):
         
@@ -340,10 +344,13 @@ class Model:
             
         return df_SOC
     
-    def results_determinitic(self):
+    def results_deterministic(self):
         
-        PV = self.realization
-        PV.extend(list(self.predictions))
+        PV = [self.realization]
+        if self.forecasting:
+            PV.extend(np.concatenate(list(self.predictions.values)))
+        else:
+            PV.extend((list(self.predictions.values)))
         
         Load = list(self.load)
         EV_availability = list(self.EV_Availability)
@@ -363,19 +370,151 @@ class Model:
         Grid_bought = [self.P_grid_bought_1.x]
         Grid_bought.extend([self.P_grid_bought[t,0].x for t in self.time_horizon])
         
-        
         SOC_f = [self.SOC[t,0].x for t in self.time_vector]
         
         dataset = pd.DataFrame(index = self.time_vector)
-        dataset['pv'] = PV
+        dataset['pv_real'] = self.data_EV.loc[self.time_vector, 'PV']
+        dataset['pv_forecast'] = PV
+        dataset['delta_pv'] =  dataset['pv_real'] -dataset['pv_forecast']
+        dataset['pv_grid'] = PV_2G
+
         dataset['load'] = Load
-        dataset['pv_ev'] = PV_2EV
         dataset['pv_load'] = PV_2L
-        dataset['grid_ev'] = Grid_2EV
         dataset['grid_load'] = Grid_2L
+
+        dataset['grid_ev'] = Grid_2EV
+        dataset['pv_ev'] = PV_2EV
         dataset['soc'] = SOC_f
         dataset['avail'] = EV_availability
             
         return dataset
+    
+    def results_stochastic(self):
         
+        Load = list(self.load)
+        EV_availability = list(self.EV_Availability)
+        
+        PV = [self.realization]
+        PV.extend([np.mean(self.predictions.loc[t,:]) for t in self.time_horizon])
+        
+        PV_2EV = [self.P_PV_2EV_1.x]
+        PV_2EV.extend([np.sum([self.P_PV_2EV[t,i].x for i in self.range_samples])/self.n_samples for t in self.time_horizon])
+        
+        PV_2L = [self.P_PV_2L_1.x]
+        PV_2L.extend([np.sum([self.P_PV_2L[t,i].x for i in self.range_samples])/self.n_samples for t in self.time_horizon])
+        
+        PV_2G = [self.P_PV_2G_1.x]
+        PV_2G.extend([np.sum([self.P_PV_2G[t,i].x for i in self.range_samples])/self.n_samples for t in self.time_horizon])
+        
+        Grid_2EV = [self.P_grid_2EV_1.x]
+        Grid_2EV.extend([np.sum([self.P_grid_2EV[t,i].x for i in self.range_samples])/self.n_samples for t in self.time_horizon])
+        
+        Grid_2L = [self.P_grid_2L_1.x]
+        Grid_2L.extend([np.sum([self.P_grid_2L[t,i].x for i in self.range_samples])/self.n_samples for t in self.time_horizon])
+        
+        SOC = [self.SOC_1.x]
+        SOC.extend([np.sum([self.SOC[t,i].x for i in self.range_samples])/self.n_samples for t in self.time_horizon])
+ 
+        dataset = pd.DataFrame(index = self.time_vector)
+        
+        dataset = pd.DataFrame(index = self.time_vector)
+        dataset['pv_real'] = self.data_EV.loc[self.time_vector, 'PV']
+        dataset['pv_forecast'] = PV
+        dataset['delta_pv'] = dataset['pv_real'] -dataset['pv_forecast']
+        dataset['pv_grid'] = PV_2G
+
+        dataset['load'] = Load
+        dataset['pv_load'] = PV_2L
+        dataset['grid_load'] = Grid_2L
+
+        dataset['grid_ev'] = Grid_2EV
+        dataset['pv_ev'] = PV_2EV
+        dataset['soc'] = SOC
+        dataset['avail'] = EV_availability
+
+
+        return dataset
+    
+    def day_ahead_update(self):
+        
+        actual_PV = self.data_EV.loc[self.time_vector, 'PV']
+        
+        if self.stochastic:
+            decisions = self.results_stochastic()
+        else:
+            decisions = self.results_deterministic()
+           
+
+        data_real = {'pv_ev':[], 'pv_load':[], 'grid_ev':[],'grid_load':[]}
+        
+        for t in decisions.index:
+            
+               pv_ev = decisions.loc[t,'pv_ev']
+               grid_ev = decisions.loc[t,'grid_ev']
+               pv_load = decisions.loc[t,'pv_load']
+               pv_grid = decisions.loc[t,'pv_grid']
+               avail = decisions.loc[t,'avail']
+               
+               p_ev = pv_ev + grid_ev
+               load = decisions.loc[t,'load']
+               delta = decisions.loc[t,'delta_pv']
+               pv = decisions.loc[t,'pv_real']
+               
+               if delta < 0:
+                   delta = -delta
+                   # less pv than expected
+                   # reduce selling
+                   #data_real['pv_grid'].append(max(0, pv_grid-delta))
+                   delta = max(0,delta - pv_grid)
+                
+                   # reduce pv to load
+                   data_real['pv_load'].append(max(0, pv_load - delta))
+                   data_real['grid_load'].append(load - max(0, pv_load - delta))
+                   delta = max(0, delta - pv_load)
+                    
+                   # switch EV charging
+                   if avail > 0:
+                       if pv >= p_ev:
+                           data_real['pv_ev'].append(p_ev)
+                           data_real['grid_ev'].append(0)
+                       else:
+                           data_real['pv_ev'].append(0)
+                           data_real['grid_ev'].append(p_ev)
+                   else:
+                       data_real['pv_ev'].append(0)
+                       data_real['grid_ev'].append(0)
+  
+               else:
+                   # check if we can switch car to ev
+                   if avail > 0:
+                       if pv >= p_ev:
+                           pv_ev = p_ev
+                           data_real['pv_ev'].append(pv_ev)
+                           data_real['grid_ev'].append(0)
+                           
+                       else:
+                           data_real['pv_ev'].append(0)
+                           data_real['grid_ev'].append(p_ev)
+                           pv_ev = 0
+                   else:
+                       data_real['pv_ev'].append(0)
+                       data_real['grid_ev'].append(0)
+                       pv_ev = 0
+                   
+                   delta = pv - pv_ev
+                   
+                   data_real['pv_load'].append(min(load, delta))
+                   data_real['grid_load'].append(load - min(load, delta))
+
+                   #data_real['pv_grid'].append(rest)
+
+        decisions['pv_ev_real'] = data_real['pv_ev']
+        decisions['grid_ev_real'] = data_real['grid_ev']
+        decisions['pv_load_real'] = data_real['pv_load']
+        decisions['grid_load_real'] = data_real['grid_load']
+        
+        actual_cost = np.sum(data_real['grid_ev']) + np.sum(data_real['grid_load'])
+        
+        return actual_cost, decisions
+    
     
