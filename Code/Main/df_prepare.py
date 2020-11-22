@@ -54,7 +54,7 @@ def data_PV_csv(df_file_name, hourly_data = True, to_trigo = True):
         hours_indices = [start + pd.Timedelta(hours = i) for i in range(len_hours)]
         data = data.loc[data.index.intersection(hours_indices)]
     
-    if to_trigo:
-        data['trigo_hours'], data['trigo_days'] = time_to_trigo(data.index)
+    # if to_trigo:
+    #     data['trigo_hours'], data['trigo_days'] = time_to_trigo(data.index)
     
     return data

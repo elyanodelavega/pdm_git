@@ -18,12 +18,30 @@ from tensorflow.keras.layers import Dense, LSTM, Dropout
 
 from sklearn.metrics import mean_squared_error
 
+import warnings
+
+from statsmodels.tsa.arima_model import ARIMA
+from sklearn.metrics import mean_squared_error
+
+
+
 
 K = keras.backend
 
-#%% functions
+#%% function
+def time_to_trigo(time_list):
+    
+    hours_list = [t.hour for t in time_list]
+    hours_trigo = [math.sin(h/24 * math.pi) for h in hours_list]
+    
+    days_list = [t.dayofyear for t in time_list]
+    days_trigo = [math.sin(d/365 * math.pi) for d in days_list]
+    
+    return hours_trigo, days_trigo
 
-class Forecast:
+#%% LSTM
+
+class Forecast_LSTM:
     
     def __init__(self, pred_variable, data, n_hour_future, ratio = 1):
         
@@ -86,6 +104,7 @@ class Forecast:
         
         dataset = dataset._get_numeric_data()
         
+        dataset['trigo_hours'], dataset['trigo_days'] = time_to_trigo(dataset.index)
         
         self.t_res = int((dataset.index[1] - dataset.index[0]).seconds)/3600
         self.f = 1/self.t_res
@@ -378,44 +397,103 @@ class Forecast:
         plt.show()
     
 #%% Functions
-def df_predictions_unique(data_EV, time, n_hour_future, forecast, t_res):
-        
-        t_start = time - pd.Timedelta(hours = t_res)
-        t_end = time + pd.Timedelta(hours = n_hour_future- t_res)
-        
-        df = data_EV.loc[t_start:t_end].copy()
-        
-        pred_variables = list(forecast.keys())
-        for key in pred_variables:
-            
-            col_name = key+'_forecast'
-            df.loc[time:t_end,col_name] = forecast[key]
-            df.loc[t_start,col_name] = df.loc[t_start,key]
-        
-            
-        return df
+class Forecast_ARIMA:
     
-def df_predictions_uncertainty(data_EV, time, n_hour_future, forecast_array, 
-                               pred_variable, scale_PV, t_res = 1):
+    def __init__(self, data, pred_variable):
         
-        t_start = time - pd.Timedelta(hours = t_res)
-        t_end = time + pd.Timedelta(hours = n_hour_future- t_res)
+        self.data = data.astype('float32')
         
-        df = data_EV.loc[t_start:t_end].copy()
+        self.pred_variable = pred_variable
         
-        print(len(forecast_array.shape))
+        self.dataset = data.loc[:,pred_variable]
         
-        if len(forecast_array.shape) == 1:
-            col_name = pred_variable+'_forecast'
-            df.loc[time:t_end,col_name] = forecast_array * scale_PV
-            df.loc[t_start,col_name] = df.loc[t_start,pred_variable]
-        else:
-            for i in range(forecast_array.shape[0]):
-                col_name = pred_variable+ str(i)
-                df.loc[time:t_end,col_name] = forecast_array[i,:].T * scale_PV
-                df.loc[t_start,col_name] = df.loc[t_start,pred_variable]
         
+    def evaluate_arima_model(self, arima_order):
+    
+        X = self.dataset
+        train_size = int(len(X) * 0.66)
+        train, test = X[0:train_size], X[train_size:]
+        history = [x for x in train]
+        
+        predictions = list()
+        for t in range(len(test)):
+            arima = ARIMA(history, order=arima_order)
+            model = arima.fit(disp=0)
+            yhat = model.forecast()[0]
+            predictions.append(yhat)
+            history.append(test[t])
+        # calculate out of sample error
+        error = mean_squared_error(test, predictions)
+        return error
+ 
+
+    def evaluate_models(self, p_values, d_values, q_values):
+        dataset = self.dataset.astype('float32')
+        best_score, best_conf = float("inf"), None
+        for p in p_values:
+            for d in d_values:
+                for q in q_values:
+                    order = (p,d,q)
+                    try:
+                        mse = self.evaluate_arima_model(dataset, order)
+                        if mse < best_score:
+                            best_score, best_conf = mse, order
+                        print(f'ARIMA{order} MSE=(int{mse})')
+                    except:
+                        continue
+    
+        print(f'Best: ARIMA{order} MSE=(int{mse})')
+        
+        self.best_conf = best_conf
+    
+    
+    def predict(self, t_forecast, t_end, dataframe = True, best_conf = (2, 0, 1), 
+                        plot_results = False, conf_interval = False):
+        
+        t_decision = t_forecast - pd.Timedelta(hours = 1)
+        previous = list(self.data.loc[:t_decision, self.pred_variable])
+        forecast_window = list(self.data.loc[t_forecast:t_end, self.pred_variable])
+        time_window = self.data.loc[t_forecast:t_end].index
+    
+        history = [p for p in previous]
+    
+        predictions = []
+        predictions_low = []
+        predictions_high = []
+        x = range(len(forecast_window))
+        
+        for t in range(len(forecast_window)):
+            arima = ARIMA(history, order=best_conf)
+            model = arima.fit(disp=0)
+            yhat = model.forecast()[0][0]
+            yhat_low = model.forecast()[2][0][0]
+            yhat_high = model.forecast()[2][0][1]
+            predictions.append(yhat)
+            predictions_low.append(yhat_low)
+            predictions_high.append(yhat_high)
             
+            history.append(forecast_window[t])
+            #print(f'{time_window[t]} Expected: {int(forecast_window[t])}, Predicted: {int(yhat)}')
+            
+        if plot_results:
+            plt.figure(figsize = (10,7))
+            plt.plot(forecast_window, label = 'expected')
+            plt.plot(predictions, label = 'predicted')
+            # plt.fill_between(x, predictions_low, predictions_high, color = 'grey', alpha = 0.2)
+            plt.legend()
+            plt.title(f'{len(forecast_window)}h {self.pred_variable} forecast')
+            plt.show()
+            
+        data = {f'{self.pred_variable}': predictions}
+        
+        if conf_interval:
+            data[f'{self.pred_variable}_low'] = predictions_low
+            data[f'{self.pred_variable}_high'] = predictions_high
+        
+        df = pd.DataFrame(data = data, index = self.data[t_forecast:t_end].index)
+        
         return df
+        
+        
 
 

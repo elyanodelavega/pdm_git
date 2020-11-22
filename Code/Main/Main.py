@@ -5,7 +5,7 @@ Created on Mon Nov  2 12:31:59 2020
 @author: Yann
 """
 
-from Forecast_Class import Forecast
+from Forecast_Class import Forecast_LSTM, Forecast_ARIMA
 
 
 import numpy as np
@@ -25,43 +25,54 @@ img_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/Images/'
 PV_csv = 'pv_simulation_evolene.csv'
 data_PV = data_PV_csv(PV_csv)
 
+EV_csv = 'ev_simulation_evolene.csv'
+data_EV = data_EV_csv(EV_csv)
 
 #%% PV Forecast 
 n_hour_future = 23
 pred_variable = 'DCPmp'
 ratio = 2
 
-PV_model_forecast = Forecast(pred_variable = pred_variable, data = data_PV,  n_hour_future = n_hour_future, ratio = ratio)
+PV_model_forecast = Forecast_LSTM(pred_variable = pred_variable, data = data_PV,  n_hour_future = n_hour_future, ratio = ratio)
 
 PV_model_forecast.build_LSTM(epochs = 50, dropout = 0.1, plot_results=True)
 PV_LSTM = PV_model_forecast.LSTM_model
 
+#%%
+
+pred_variable = 'load'
+
+Load_model_forecast = Forecast_ARIMA(data_EV, pred_variable = pred_variable)
 
 #%%
-EV_csv = 'ev_simulation_evolene.csv'
-data_EV = data_EV_csv(EV_csv)
+
 model_number = 1
 name = 'model'
 
+import warnings
+warnings.filterwarnings('ignore', 'statsmodels.tsa.arima_model.ARMA',
+                        FutureWarning)
+warnings.filterwarnings('ignore', 'statsmodels.tsa.arima_model.ARIMA',
+                        FutureWarning)
 
+warnings.filterwarnings("ignore")
 #%% Optimization
     
-from Model_Class import EV, House, Model
-from Forecast_Class import Forecast
+from Model_Class import EV, House, Model, quick_stats
 from plot_res import plot_MPC, plot_results_day_ahead, plot_results_deterministic
 
 
 
 t_res = PV_model_forecast.t_res
 save = 0
-columns = ['pv', 'load', 'pv_ev', 'pv_load', 'grid_ev', 'grid_load', 'soc',
+columns = ['pv', 'load', 'pv_ev', 'pv_load','pv_grid', 'grid_ev', 'grid_load', 'soc',
        'avail', 'episode']
 
 
-EV1 = EV(SOC_min_departure = 0.95)
+EV1 = EV()
 House1 = House()
-episode_start = 10
-n_episodes = 18
+episode_start = 5
+n_episodes = 10
 
 range_episodes = range(episode_start, episode_start + n_episodes)
 
@@ -70,8 +81,7 @@ methods = ['1. Fully deterministic',  '4. MPC deterministic',
            '5. MPC stochastic']
 costs = {m:[] for m in methods}
 results = {m: pd.DataFrame(index = data_EV.index, columns = columns) for m in methods}
-constraints_violation = {m:[] for m in methods}
-alpha = 0.75
+stats = {m:{e: None for e in range_episodes} for m in methods}
 
 img_paths = {m:[] for m in methods}
 
@@ -96,13 +106,14 @@ for e in range_episodes:
     t_decision = t_start_episode
     t_forecast = episode.index[1]
     PV_predictions_0 = episode.loc[t_forecast:t_end_episode,'PV'].to_frame()
-    model_0.optimize(t_decision, t_end_episode, 'PV', PV_predictions_0, forecasting = False, method = 'deterministic')
+    Load_predictions_0 = episode.loc[t_forecast:t_end_episode,'load'].to_frame()
+    model_0.optimize(t_decision, t_end_episode, PV_predictions_0,Load_predictions_0, forecasting = False, method = 'deterministic')
     decisions_0 = model_0.results_deterministic()[:-1]
     cost = decisions_0.loc[:,['grid_load','grid_ev']].sum(axis = 0).sum()
     costs['1. Fully deterministic'].append(cost)
     results['1. Fully deterministic'].loc[t_start_episode:t_end_episode] = decisions_0
+    stats['1. Fully deterministic'][e] = quick_stats(decisions_0)
 
-    constraints_violation['1. Fully deterministic'].append(model_0.constraints_violation)
     
     #plot_results_deterministic(results_0, figname = str(start), img_path = img_paths['1. Fully deterministic'])
     
@@ -119,18 +130,20 @@ for e in range_episodes:
         t_forecast = episode.index[t+1]
         t_end = min(t_decision + pd.Timedelta(hours = n_hour_future), t_end_episode)
         
+        Load_predictions_3 = Load_model_forecast.predict(t_forecast, t_end)
         PV_predictions_3 = PV_model_forecast.predict(model = PV_LSTM, time = t_forecast, dataframe = True)
-        model_3.optimize(t_decision, t_end, 'PV', PV_predictions_3, forecasting = True, method = 'deterministic' )
+        model_3.optimize(t_decision, t_end, PV_predictions_3, Load_predictions_3, forecasting = True, method = 'deterministic' )
         
         #results_3 = model_3.results_stochastic()
         #plot_MPC(decisions_3, results_3, figname = str(k), img_path = k_path)
     
     decisions_3 = model_3.decisions[:-1]
     #results_3 = model_3.results_stochastic()
-    cost = decisions_3.loc[:,['grid_load','grid_ev']].sum(axis = 0).sum()
+    cost = decisions_3.loc[:,['grid_load','grid_ev']].sum(axis = 0).sum() + model_3.extra_cost
     costs['4. MPC deterministic'].append(cost)
     results['4. MPC deterministic'].loc[t_start_episode:t_end_episode] = decisions_3
-    constraints_violation['4. MPC deterministic'].append(model_3.constraints_violation)
+    stats['4. MPC deterministic'][e] = quick_stats(decisions_3)
+    
     #to_video(k_path)
     
     
@@ -146,10 +159,11 @@ for e in range_episodes:
         t_forecast = episode.index[t+1]
         t_end = min(t_decision + pd.Timedelta(hours = n_hour_future), t_end_episode)
         
+        Load_predictions_4 = Load_model_forecast.predict(t_forecast, t_end)
         PV_predictions_4 = PV_model_forecast.predict_distribution(model = PV_LSTM, time = t_forecast,
                                                             dropout = 0.35, dataframe = True)
 
-        model_4.optimize(t_decision, t_end, 'PV', PV_predictions_4, forecasting = True, method = 'expected value')
+        model_4.optimize(t_decision, t_end, PV_predictions_4, Load_predictions_4, forecasting = True, method = 'expected value')
         #decisions_4 = model_4.decisions
         #results_4 = model_4.results_stochastic()
         #SOC_4 = model_4.predictions_SOC()
@@ -159,14 +173,17 @@ for e in range_episodes:
     decisions_4 = model_4.decisions[:-1]
     
     #results_4 = model_3.results_stochastic()
-    cost = decisions_4.loc[:,['grid_load','grid_ev']].sum(axis = 0).sum()
+    cost = decisions_4.loc[:,['grid_load','grid_ev']].sum(axis = 0).sum() + model_4.extra_cost
     costs['5. MPC stochastic'].append(cost)
-    results['5. MPC stochastic'].loc[t_start_episode:t_end_episode] = decisions_3
-    constraints_violation['5. MPC stochastic'].append(model_4.constraints_violation)
+    results['5. MPC stochastic'].loc[t_start_episode:t_end_episode] = decisions_4
+    stats['5. MPC stochastic'][e] = quick_stats(decisions_4)
+    
     #to_video(k_path)
 
     model_number += 1
 
+
+#%%
 import matplotlib.pyplot as plt
 plt.figure(figsize=(10,7))
 
@@ -174,37 +191,113 @@ cost2 = {m: np.cumsum([c/1000 for c in costs[m]]) for m in costs}
 for m in costs.keys():
     plt.plot(cost2[m], label = m)
 
+plt.xticks(ticks = range(n_episodes), labels = range_episodes)
 plt.legend(ncol = 2)
-plt.xlabel('Episodes')
+plt.xlabel('Episode')
 plt.ylabel('Electricity bought [kWh]')
 plt.title('Cumulative electricity bought comparison')
 
 #%%
-for e in range(12,18):
+for e in range_episodes:
     
     for m in results.keys():
-        fig, ax1 = plt.subplots(figsize=(10,7)) 
+        fig, axes = plt.subplots(4,1, sharex=True, figsize=(16,9))
         episode = results[m][results[m].episode == e]
         grid_ev_bought = episode.loc[:,['grid_ev']].sum(axis = 0).sum()
         grid_load_bought = episode.loc[:,['grid_load']].sum(axis = 0).sum()
+        p_grid_bought = episode.loc[:,['grid_ev', 'grid_load']].sum(axis = 1)
+        total = grid_ev_bought + grid_load_bought
+        plt.suptitle(f'{m}, Episode {e}, Power bought: {int(total/1000)} kWh ')
+        x = np.arange(len(episode))
+        
+        axes[0].plot(x, list(episode.pv/1000), label = 'PV')
+        axes[0].plot(x, list(episode.pv_ev/1000), label = 'PV_EV')
+        axes[0].plot(x, list(episode.pv_load/1000), label = 'PV_Load')
+        axes[0].set_title('PV')
+        axes[0].legend(ncol = 3, loc = 'upper left')
+        
+        
+        axes[1].plot(x, list(episode.load/1000), label = 'Load')
+        axes[1].plot(x, list(episode.grid_load/1000), label = 'Grid_load')
+        axes[1].plot(x, list(episode.pv_load/1000), label = 'PV_Load')
+        axes[1].set_title('Load')
+        axes[1].legend(ncol = 3, loc = 'upper left')
+        
+        axes[2].plot(list(p_grid_bought/1000) , label = 'Grid')
+        axes[2].plot(list(episode.grid_load/1000), label = 'Grid_load')
+        axes[2].plot(list(episode.grid_ev/1000), label = 'Grid_EV')
+        axes[2].set_title('Grid')
+        axes[2].legend(ncol = 3, loc = 'upper left')
+        
+        axes[3].plot(list(episode.pv_ev/1000), label = 'pv_ev')
+        axes[3].plot(list(episode.grid_ev/1000), label = 'grid_ev')
+        ax3 = axes[3].twinx()
+        ax3.plot(x,list(episode.soc*100),'--', color = 'grey')
+        ax3.set_ylabel('EV SoC [%]', color='black')
+        ax3.set_ylim([0,110])
+        ax3.set_title('SOC')
+        axes[3].set_xlabel('Hours')
+        axes[3].legend(ncol = 2, loc = 'upper left')
+        
+        try:
+            t_dep = list(episode.avail).index(0)
+        except:
+            t_dep = x[-1]
+            
+        for i in range(3):
+            axes[i].axvline(t_dep, color = 'black')
+            
+            
+        axes[3].axvline(t_dep, color = 'black')
+        time = episode.index
+        ticks = np.arange(0, max(x)+1, step=6)
+        ticks = [i for i in range(0, max(x) + 1, 4)]
+        labels = [str(time[ticks[i]].hour) + ':00' for i in range(len(ticks))]
+        plt.xticks(ticks = ticks, labels = labels)
+        
+        
+        plt.show()
+#%%
+
+for e in range_episodes:
+    fig, axes = plt.subplots(3,1, sharex=True, figsize=(16,9))
+    plt.suptitle(f' Episode {e}')
+    for i, m in enumerate(results.keys()):
+        
+        episode = results[m][results[m].episode == e]
+        grid_ev_bought = episode.loc[:,['grid_ev']].sum(axis = 0).sum()
+        grid_load_bought = episode.loc[:,['grid_load']].sum(axis = 0).sum()
+        p_grid_bought = episode.loc[:,['grid_ev', 'grid_load']].sum(axis = 1)
         total = grid_ev_bought + grid_load_bought
         
         x = np.arange(len(episode))
-        ax1.plot(x, list(episode.grid_ev/1000), label = f'grid to ev: {int(grid_ev_bought/1000)} kWh')
-        ax1.plot(x, list(episode.grid_load/1000), label = f'grid to load: {int(grid_load_bought/1000)} kWh')
-        ax1.plot(x, list(episode.pv/1000), color = 'green', label = 'PV')
-        ax1.fill_between(x, list(episode.pv/1000), color = 'green', alpha = 0.3)
-        plt.legend()
-        ax2 = ax1.twinx() # ax for plotting EV SOC evolution
-        ax2.plot(x,list(episode.soc*100),'--', color = 'grey')
-        ax2.set_ylabel('EV SoC [%]', color='black')
-        ax2.set_ylim([0,100])
-        ax2.grid(False)
         
-        ax1.set_xlabel('Hours')
-        ax1.set_ylabel('Electricity bought [kWh]')
-        plt.title(f'{m}, Episode {e}, Power bought: {int(total/1000)} kWh ')
-#%%
-
-
+        axes[i].plot(list(episode.pv_ev/1000), label = 'pv_ev')
+        axes[i].plot(list(episode.grid_ev/1000), label = 'grid_ev')
+        ax1 = axes[i].twinx()
+        ax1.plot(x,list(episode.soc*100),'--', color = 'grey')
+        ax1.set_ylabel('EV SoC [%]', color='black')
+        ax1.set_ylim([0,110])
+        axes[i].set_title(f'{m}: cost: {int(costs[m][e - episode_start]/1000)}')
+        
+        axes[i].legend(ncol = 2, loc = 'upper left')
+        
+        try:
+            t_dep = list(episode.avail).index(0)
+        except:
+            t_dep = x[-1]
+            
+        
+        axes[i].axvline(t_dep, color = 'black')
+            
+            
+        
+    time = episode.index
+    ticks = np.arange(0, max(x)+1, step=6)
+    ticks = [i for i in range(0, max(x) + 1, 4)]
+    labels = [str(time[ticks[i]].hour) + ':00' for i in range(len(ticks))]
+    plt.xticks(ticks = ticks, labels = labels)
+    
+    
+    plt.show()
 
