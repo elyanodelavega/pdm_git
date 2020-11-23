@@ -72,7 +72,7 @@ columns = ['pv', 'load', 'pv_ev', 'pv_load','pv_grid', 'grid_ev', 'grid_load', '
 EV1 = EV()
 House1 = House()
 episode_start = 5
-n_episodes = 10
+n_episodes = 15
 
 range_episodes = range(episode_start, episode_start + n_episodes)
 
@@ -300,4 +300,27 @@ for e in range_episodes:
     
     
     plt.show()
+    
+#%%
+import seaborn as sns
+fig, axes = plt.subplots(3,3,figsize=(16,9))
+
+for i, m in enumerate(methods):
+    r = stats[m]
+    soc_last = []
+    p_bought = []
+    self_cons = []
+    
+    for e in range_episodes:
+        soc_last.append(r[e]['absolut']['SOC_last']*100)
+        p_bought.append(r[e]['absolut']['P_G_bought']/1000)
+        self_cons.append(r[e]['relative']['Self_consumption']*100)
+    
+    
+    sns.boxplot(p_bought, ax = axes[i,0])
+    sns.boxplot(self_cons, ax = axes[i,1])
+    #sns.boxplot(soc_last, ax = axes[i,2])
+
+plt.show()
+    
 

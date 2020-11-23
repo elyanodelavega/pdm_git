@@ -540,10 +540,6 @@ class Model:
 def quick_stats(decisions):
     data = decisions.copy()
     
-    time = list(data.index)
-    avail  = list(data.avail)
-    departure = time[avail.index(0)]
-    
     # Time absolut
     P_G_bought_t = data.loc[:,['grid_load','grid_ev']].sum(axis = 1)
     P_G_sold_t = data['pv_grid']
@@ -585,10 +581,19 @@ def quick_stats(decisions):
     P_EV = P_EV_t.sum()
     PV = PV_t.sum()
     PV_consumed = PV_consumed_t.sum()
-    SOC_last = data.loc[departure,'soc']
+    
     P_load = P_load_t.sum()
     
     P_consumed = P_consumed_t.sum()
+    
+    time = list(data.index)
+    avail  = list(data.avail)
+    
+    SOC_t = data['soc']
+    try:
+        SOC_last = SOC_t[time[avail.index(0)]]
+    except:
+        SOC_last = SOC_t[time[-1]] + P_EV[time[-1]]/16000
     
     absolut = {'P_G_bought': P_G_bought, 'P_G_sold': P_G_sold,'P_EV': P_EV, 'PV': PV, 
                'PV_consumed': PV_consumed, 'SOC_last': SOC_last, 'Load': P_load, 
@@ -603,7 +608,7 @@ def quick_stats(decisions):
     
     EV_G_bought = data['grid_ev'].sum()/P_G_bought
     
-    Load_G_bought = P_load/P_G_bought
+    Load_G_bought = data['grid_load']/P_G_bought
     
     Sold_PV = P_G_sold/PV
     
