@@ -147,22 +147,28 @@ plt.show()
 
 #%% Hist Grid ev
 
-
+import numpy as np
+import math
 fig, axes = plt.subplots(len(names),1, sharex = True, sharey = True, figsize=(16,9))
 plt.suptitle('Grid charges to EV', fontsize = 22)
 
 metric = ['self_cons', 'soc_dep', 'grid_bought']
 maximum = []
+bins = [i*0.37 for i in range(math.ceil(3700/370))]
+bins.append(3.7)
 for i, n in enumerate(names):
      
     #sns.boxplot(data = stats_df[m], ax = axes[i], orient = 'v', palette = [color_codes[n] for n in names])
     grid = decisions[n].grid_ev[decisions[n].grid_ev > 0.001]
-    sns.histplot(grid/1000, ax = axes[i], color = color_codes[n], bins = 15)
+    sns.histplot(grid/1000, ax = axes[i], color = color_codes[n], bins = bins)
     axes[i].set_xlim([0,4])
     axes[i].set_title(algorithms[n], fontsize = 20)
-    axes[i].set_ylabel(' ')
-
+    axes[i].set_ylabel('Count')
+    axes[i].set_xlim([-0.05,3.75])
+    
+# ticks = np.arange(0,4,0.25)
 plt.xlabel('kW', fontsize = 18)
+plt.xticks(bins)
 for i in range(3):
     axes[i].grid()
 plt.show()
@@ -178,12 +184,14 @@ for i, n in enumerate(names):
      
     #sns.boxplot(data = stats_df[m], ax = axes[i], orient = 'v', palette = [color_codes[n] for n in names])
     pv = decisions[n].pv_ev[decisions[n].pv_ev > 0.001]
-    sns.histplot(pv/1000, ax = axes[i], color = color_codes[n], bins = 15)
+    sns.histplot(pv/1000, ax = axes[i], color = color_codes[n], bins = bins)
     axes[i].set_xlim([0,4])
     axes[i].set_title(algorithms[n], fontsize = 20)
-    axes[i].set_ylabel(' ')
+    axes[i].set_ylabel('Count')
+    axes[i].set_xlim([-0.05,3.75])
 
 plt.xlabel('kW', fontsize = 18)
+plt.xticks(bins)
 for i in range(3):
     axes[i].grid()
 plt.show()
@@ -201,12 +209,14 @@ for i, n in enumerate(names):
     pv = decisions[n].pv_ev[decisions[n].pv_ev > 0.001]/1000
     grid = decisions[n].grid_ev[decisions[n].grid_ev > 0.001]/1000
     p_ev = list(pv) + list(grid)
-    sns.histplot(p_ev, ax = axes[i], color = color_codes[n], bins = 15)
+    sns.histplot(p_ev, ax = axes[i], color = color_codes[n], bins = bins)
     axes[i].set_xlim([0,4])
     axes[i].set_title(algorithms[n], fontsize = 20)
-    axes[i].set_ylabel(' ')
+    axes[i].set_ylabel('Count')
+    axes[i].set_xlim([-0.05,3.75])
 
 plt.xlabel('kW', fontsize = 18)
+plt.xticks(bins)
 for i in range(3):
     axes[i].grid()
 plt.show()
