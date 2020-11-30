@@ -447,33 +447,47 @@ class Forecast_ARIMA:
         self.best_conf = best_conf
     
     
-    def predict(self, t_forecast, t_end, dataframe = True, best_conf = (2, 0, 1), 
-                        plot_results = False, conf_interval = False):
+    def predict(self, t_forecast, t_end, dataframe = True, best_conf = (2, 1, 1), 
+                        plot_results = False, conf_interval = False, iterative = False, n_past = 300):
         
         t_decision = t_forecast - pd.Timedelta(hours = 1)
-        previous = list(self.data.loc[:t_decision, self.pred_variable])
+        previous = list(self.data.loc[:t_decision, self.pred_variable])[-n_past:]
         forecast_window = list(self.data.loc[t_forecast:t_end, self.pred_variable])
         time_window = self.data.loc[t_forecast:t_end].index
     
         history = [p for p in previous]
-    
-        predictions = []
-        predictions_low = []
-        predictions_high = []
-        x = range(len(forecast_window))
         
-        for t in range(len(forecast_window)):
-            arima = ARIMA(history, order=best_conf)
-            model = arima.fit(disp=0)
-            yhat = model.forecast()[0][0]
-            yhat_low = model.forecast()[2][0][0]
-            yhat_high = model.forecast()[2][0][1]
-            predictions.append(yhat)
-            predictions_low.append(yhat_low)
-            predictions_high.append(yhat_high)
+        if iterative:
+            predictions = []
+            #predictions_low = []
+            #predictions_high = []
             
-            history.append(forecast_window[t])
-            #print(f'{time_window[t]} Expected: {int(forecast_window[t])}, Predicted: {int(yhat)}')
+            
+            for t in range(len(forecast_window)):
+                arima = ARIMA(history, order=best_conf)
+                model = arima.fit(disp=0)
+                yhat = model.forecast()[0][0]
+                #yhat_low = model.forecast()[2][0][0]
+                #yhat_high = model.forecast()[2][0][1]
+                predictions.append(yhat)
+                #predictions_low.append(yhat_low)
+                #predictions_high.append(yhat_high)
+                
+                history.append(forecast_window[t])
+                #print(f'{time_window[t]} Expected: {int(forecast_window[t])}, Predicted: {int(yhat)}')
+        else:
+            arima = ARIMA(history, order = best_conf)
+            try:
+                model = arima.fit(disp = 0)
+                predictions = model.forecast(len(time_window))[0]
+                data = {f'{self.pred_variable}': predictions}
+                if (data>0).all():
+                    predictions = self.predict_with_average(t_forecast, t_end)
+                    data = {f'{self.pred_variable}': predictions}
+                
+            except:
+                predictions = self.predict_with_average(t_forecast, t_end)
+                data = {f'{self.pred_variable}': predictions}
             
         if plot_results:
             plt.figure(figsize = (10,7))
@@ -484,16 +498,39 @@ class Forecast_ARIMA:
             plt.title(f'{len(forecast_window)}h {self.pred_variable} forecast')
             plt.show()
             
-        data = {f'{self.pred_variable}': predictions}
         
-        if conf_interval:
-            data[f'{self.pred_variable}_low'] = predictions_low
-            data[f'{self.pred_variable}_high'] = predictions_high
         
-        df = pd.DataFrame(data = data, index = self.data[t_forecast:t_end].index)
+        # if conf_interval:
+        #     data[f'{self.pred_variable}_low'] = predictions_low
+        #     data[f'{self.pred_variable}_high'] = predictions_high
+        
+        df = pd.DataFrame(data = data, index = time_window)
+        
+        
         
         return df
         
         
+    def predict_with_average(self, t_forecast, t_end):
+        
+        t_decision = t_forecast - pd.Timedelta(hours = 1)
+        hours = [t.hour for t in self.data.index]
+        self.data['hour'] = hours
+        hours_list = np.unique(hours)
+        previous = self.data.loc[:t_decision]
+        average = {h: np.mean([previous[previous['hour'] == h][self.pred_variable]]) for h in hours_list}
+        forecast_time = self.data.loc[t_forecast:t_end].index
+        
+        forecast = [average[t.hour] for t in forecast_time]
+        
+        #forecast = pd.DataFrame(data = forecast_variable, index = forecast_time, columns=[self.pred_variable])
+        
+        
+        return forecast
+    
 
-
+    
+    
+    
+    
+        
