@@ -432,7 +432,6 @@ class Model:
         else:
             decisions = self.results_deterministic()
            
-
         data_real = {'pv_ev':[], 'pv_load':[], 'grid_ev':[],'grid_load':[]}
         
         for t in decisions.index:

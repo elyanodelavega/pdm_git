@@ -10,13 +10,9 @@ from Forecast_Class import Forecast_LSTM, Forecast_ARIMA
 
 import numpy as np
 import pandas as pd
-import random
-import os
 
-from to_video import to_video
-from plot_res import plot_dropout_results, plot_MPC
 from df_prepare import data_PV_csv, data_EV_csv
-from keras.models import load_model
+
 
 
 img_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/Images/'
@@ -120,8 +116,8 @@ warnings.filterwarnings("ignore")
 #         stats[m][e] = quick_stats(decisions_0)
 #%% Optimization
     
-from Model_Class import EV, House, Model, quick_stats
-from plot_res import plot_MPC, plot_results_day_ahead, plot_results_deterministic
+from Model_Class import EV, House, Model
+
 import time
 
 
@@ -135,7 +131,7 @@ columns = ['pv', 'load', 'pv_ev', 'pv_load','pv_grid', 'grid_ev', 'grid_load', '
 EV1 = EV()
 House1 = House()
 episode_start = 1
-n_episodes = 3
+n_episodes = 60
 
 range_episodes = range(episode_start, episode_start + n_episodes)
 
@@ -149,22 +145,13 @@ results = {m: pd.DataFrame(index = data_EV.index, columns = columns) for m in me
 
 predictions_load = {m:{} for m in methods}
 
-predictions_PV = {m:{} for m in methods}
+predictions_pv = {m:{} for m in methods}
 
 MPC_results = {m:{} for m in methods}
 
 time_algo = {m:[] for m in methods}
 
 img_paths = {m:[] for m in methods}
-
-if save:
-    os.mkdir(img_folder_path+name+'_'+str(model_number))
-    for m in methods:
-        img_path = img_folder_path+name+'_'+str(model_number)+'/'+m+ '/'
-        img_paths[m] = img_path
-        os.mkdir(img_path)
-
-figname = None
 
 for e in range_episodes:
     episode = data_EV[data_EV.episode == e]
@@ -188,14 +175,14 @@ for e in range_episodes:
     results['1. Fully deterministic'].loc[t_start_episode:t_end_episode] = decisions_0
     
     predictions_load['1. Fully deterministic'][e] = Load_predictions_0
-    predictions_PV['1. Fully deterministic'][e] = PV_predictions_0
+    predictions_pv['1. Fully deterministic'][e] = PV_predictions_0
     end_0 = time.time()
     total_ep_0 = end_0 -start_0
     time_algo['1. Fully deterministic'].append(total_ep_0)
 
     start_3 = time.time()
     predictions_load['4. MPC deterministic'][e] = {}
-    predictions_PV['4. MPC deterministic'][e] = {}
+    predictions_pv['4. MPC deterministic'][e] = {}
     MPC_results['4. MPC deterministic'][e] = {}
     # #MPC deterministic
     model_3 = Model(name = name + methods[1] + str(model_number), data_EV = data_EV, t_start = t_start_episode, 
@@ -211,8 +198,8 @@ for e in range_episodes:
         PV_predictions_3 = PV_model_forecast.predict(model = PV_LSTM, time = t_forecast, dataframe = True)
         model_3.optimize(t_decision, t_end, PV_predictions_3, Load_predictions_3, forecasting = True, method = 'deterministic' )
         predictions_load['4. MPC deterministic'][e][t_decision]  = Load_predictions_3
-        predictions_PV['4. MPC deterministic'][e] = PV_predictions_3
-        results_3 = model_3.results_stochastic()
+        predictions_pv['4. MPC deterministic'][e][t_decision] = PV_predictions_3
+        results_3 = model_3.results_deterministic()
         MPC_results['4. MPC deterministic'][e][t_decision] = results_3
         #plot_MPC(decisions_3, results_3, figname = str(k), img_path = k_path)
     
@@ -230,52 +217,52 @@ for e in range_episodes:
     #to_video(k_path)
     
     
-    # #MPC stochastic Expected
-    # start_4 = time.time()
-    # predictions_load['5. MPC stochastic'][e] = {}
-    # predictions_PV['5. MPC stochastic'][e] = {}
-    # MPC_results['5. MPC stochastic'][e] = {'results': {}, 'soc': {}}
-    # model_4 = Model(name = name + methods[2]+str(model_number), data_EV = data_EV, t_start = t_start_episode, 
-    #           t_res = t_res,  EV = EV1, House = House1)
+    #MPC stochastic Expected
+    start_4 = time.time()
+    predictions_load['5. MPC stochastic'][e] = {}
+    predictions_pv['5. MPC stochastic'][e] = {}
+    MPC_results['5. MPC stochastic'][e] = {'results': {}, 'soc': {}}
+    model_4 = Model(name = name + methods[2]+str(model_number), data_EV = data_EV, t_start = t_start_episode, 
+              t_res = t_res,  EV = EV1, House = House1)
 
-    # for t in range(episode_length-1):
+    for t in range(episode_length-1):
 
-    #     t_decision = episode.index[t]
+        t_decision = episode.index[t]
         
-    #     t_forecast = episode.index[t+1]
-    #     t_end = min(t_decision + pd.Timedelta(hours = n_hour_future), t_end_episode)
+        t_forecast = episode.index[t+1]
+        t_end = min(t_decision + pd.Timedelta(hours = n_hour_future), t_end_episode)
         
-    #     Load_predictions_4 = Load_model_forecast.predict(t_forecast, t_end)
-    #     PV_predictions_4 = PV_model_forecast.predict_distribution(model = PV_LSTM, time = t_forecast,
-    #                                                         dropout = 0.35, dataframe = True)
+        Load_predictions_4 = Load_model_forecast.predict(t_forecast, t_end)
+        PV_predictions_4 = PV_model_forecast.predict_distribution(model = PV_LSTM, time = t_forecast,
+                                                            dropout = 0.35, num_iter = 12, dataframe = True)
 
-    #     model_4.optimize(t_decision, t_end, PV_predictions_4, Load_predictions_4, forecasting = True, method = 'expected value')
-    #     decisions_4 = model_4.decisions
-    #     results_4 = model_4.results_stochastic()
-    #     MPC_results['5. MPC stochastic'][e]['results'][t_decision] = results_4
+        model_4.optimize(t_decision, t_end, PV_predictions_4, Load_predictions_4, forecasting = True, method = 'expected value')
+        decisions_4 = model_4.decisions
+        results_4 = model_4.results_stochastic()
+        MPC_results['5. MPC stochastic'][e]['results'][t_decision] = results_4
         
-    #     SOC_4 = model_4.predictions_SOC()
-    #     MPC_results['5. MPC stochastic'][e]['soc'][t_decision] = SOC_4
+        SOC_4 = model_4.predictions_SOC()
+        MPC_results['5. MPC stochastic'][e]['soc'][t_decision] = SOC_4
         
         
-    #     predictions_load['5. MPC stochastic'][e][t_decision]  = Load_predictions_4
-    #     predictions_PV['5. MPC stochastic'][e] = PV_predictions_4
+        predictions_load['5. MPC stochastic'][e][t_decision]  = Load_predictions_4
+        predictions_pv['5. MPC stochastic'][e][t_decision] = PV_predictions_4
     
     
-    # decisions_4 = model_4.decisions[:-1]
-    # decisions_4 = decisions_4.append(decisions_0.tail(1))
-    # decisions_4.loc[t_end_episode,'soc'] = model_4.decisions.loc[t_end,'soc']
+    decisions_4 = model_4.decisions[:-1]
+    decisions_4 = decisions_4.append(decisions_0.tail(1))
+    decisions_4.loc[t_end_episode,'soc'] = model_4.decisions.loc[t_end,'soc']
 
-    # cost = decisions_4.loc[:,['grid_load','grid_ev']].sum(axis = 0).sum() + model_4.extra_cost
-    # costs['5. MPC stochastic'].append(cost)
-    # results['5. MPC stochastic'].loc[t_start_episode:t_end_episode] = decisions_4
+    cost = decisions_4.loc[:,['grid_load','grid_ev']].sum(axis = 0).sum() + model_4.extra_cost
+    costs['5. MPC stochastic'].append(cost)
+    results['5. MPC stochastic'].loc[t_start_episode:t_end_episode] = decisions_4
     
-    # end_4 = time.time()
-    # total_ep_4 = end_4 -start_4
-    # time_algo['5. MPC stochastic'].append(total_ep_4)
+    end_4 = time.time()
+    total_ep_4 = end_4 -start_4
+    time_algo['5. MPC stochastic'].append(total_ep_4)
 
 
-    # model_number += 1
+    model_number += 1
 
 #%%
 import pickle
@@ -291,10 +278,12 @@ for i,m in enumerate(methods):
         file_pred_load = open(f'load_pred_{names[i]}_{n_episodes}.pickle', 'wb') 
         pickle.dump(pred_load, file_pred_load)
         
-        pred_pv = predictions_PV[m]
+        pred_pv = predictions_pv[m]
         file_pred_pv = open(f'pv_pred_{names[i]}_{n_episodes}.pickle', 'wb') 
         pickle.dump(pred_pv, file_pred_pv)
         
         full_res = MPC_results[m]
         file_full_res = open(f'full_res_{names[i]}_{n_episodes}.pickle', 'wb') 
         pickle.dump(full_res, file_full_res)
+
+#%%

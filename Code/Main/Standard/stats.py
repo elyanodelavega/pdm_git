@@ -72,7 +72,8 @@ for n in names:
 algorithms = {'opti': 'Fully deterministic', 'mpc_d': 'MPC deterministic', 
            'mpc_s': 'MPC stochastic'}
 
-stats = {n: quick_stats(decisions[n]) for n in names}
+
+stats = {n: quick_stats(decisions[n][decisions[n].episode < 55]) for n in names}
 
 metrics = ['self_cons', 'soc_dep', 'grid_bought']
 
