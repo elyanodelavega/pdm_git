@@ -35,9 +35,8 @@ class House:
         
 class Model:
     
-    def __init__(self, name, data_EV, t_start, t_res, House, EV, spot_prices):
+    def __init__(self, data_EV, t_start, t_res, House, EV, spot_prices, V2X = 0):
 
-        self.name = name
         
         self.set_house_parameter(House)
 
@@ -63,6 +62,8 @@ class Model:
         self.constraints_violation = {}
         
         self.spot_prices = spot_prices
+        
+        self.V2X = V2X
 
         
     def set_house_parameter(self, House):
@@ -102,11 +103,13 @@ class Model:
         
         self.data = self.data_EV[t_decision:t_end]
         
+        self.t_res = ((self.data.index[1] - self.data.index[0]).seconds)/3600
+        
         self.episode = self.data_EV.loc[t_decision, 'episode']
         
         self.delta = t_end - t_decision
         
-        self.duration = int(self.delta.days * 24 + self.delta.seconds/3600) 
+        self.duration = int((self.delta.days * 24  + self.delta.seconds/3600)/self.t_res)
         
         self.realization_PV = self.data_EV.loc[t_decision, 'PV']
         
@@ -138,7 +141,7 @@ class Model:
         
         self.t_start = self.time_vector[0]
         self.t_end = self.time_vector[-1]
-        self.t_res = int((self.time_vector[1] - self.time_vector[0]).seconds)/3600
+        
         
         self.time_horizon = self.time_vector[1:]
         self.t_forecast = self.time_horizon[0]
@@ -201,8 +204,8 @@ class Model:
         self.dis_EV_balance_1 = self.m.addConstr(self.P_EV_dis_1 == self.P_EV2L_1
                                     + self.P_EV2G_1, name = 'dis_EV_balance_1')
         
-        self.P_chmax_1 = self.m.addConstr(self.P_EV_ch_1 <= self.EV_availability[t] * self.P_EV_chmax)
-        self.P_dismax_1 = self.m.addConstr(self.P_EV_dis_1 <= self.EV_availability[t] * self.P_EV_dismax)
+        self.P_chmax_1 = self.m.addConstr(self.P_EV_ch_1 <= self.y_ev_ch_1*self.EV_availability[t] * self.P_EV_chmax)
+        self.P_dismax_1 = self.m.addConstr(self.P_EV_dis_1 <= self.y_ev_dis_1*self.EV_availability[t] * self.P_EV_dismax * self.V2X)
 
         # update soc for t_forecast, depending on first stage decisions
         self.SOC_update_1 = self.m.addConstr(self.SOC_2 == 
@@ -270,9 +273,9 @@ class Model:
                                   + self.P_EV2G[t,i]
                                   for t in self.time_horizon for i in self.range_samples), name = 'dis_EV_balance')
        
-        self.P_chmax = self.m.addConstrs((self.P_EV_ch[t,i]) <= self.EV_availability[t] * self.P_EV_chmax for t in self.time_horizon for i in self.range_samples)
+        self.P_chmax = self.m.addConstrs((self.P_EV_ch[t,i]) <= self.EV_availability[t] * self.y_ev_ch[t,i]*self.P_EV_chmax for t in self.time_horizon for i in self.range_samples)
         
-        self.P_dismax = self.m.addConstrs((self.P_EV_dis[t,i]) <= self.EV_availability[t] * self.P_EV_dismax for t in self.time_horizon for i in self.range_samples)
+        self.P_dismax = self.m.addConstrs((self.P_EV_dis[t,i]) <= self.EV_availability[t] * self.y_ev_dis[t,i]*self.P_EV_dismax * self.V2X for t in self.time_horizon for i in self.range_samples)
         
         self.SOC_continuity = self.m.addConstrs((self.SOC[self.time_horizon[0],j] == self.SOC_2 
                                                  for j in self.range_samples), name = 'SOC_continuity')
@@ -293,14 +296,14 @@ class Model:
         
         
         
-    def optimize(self, t_decision, t_end, predictions_PV, predictions_load, forecasting = True, method = 'deterministic', parameters = None, lambda_1 = 0.5):
+    def optimize(self, t_decision, t_end, predictions_PV, predictions_load, forecasting = True, method = 'deterministic', parameters = None, lambda_soc = 0.5):
         
         if predictions_PV.shape[1] == 1:
             self.stochastic = False
-            self.m = gp.Model(self.name+'_deterministic')
+            self.m = gp.Model()
         else:
             self.stochastic = True
-            self.m = gp.Model(self.name+'_stochastic')
+            self.m = gp.Model()
         
         self.forecasting = forecasting
         self.prepare_data(t_decision,t_end, predictions_PV, predictions_load)
@@ -312,76 +315,42 @@ class Model:
         self.add_second_stage_variables()
         self.add_second_stage_constraints()
         
+        cost_decision = self.P_grid_bought_1* self.buy_spot_price[self.t_decision] - self.P_grid_sold_1* self.sell_spot_price[self.t_decision]
+        cost_forecast = np.sum([(self.P_grid_bought[t,i] * self.buy_spot_price[t] - self.P_grid_sold[t,i] * self.sell_spot_price[t]) for t in self.time_horizon for i in self.range_samples])  
+        
+        PV_consumed_decision = self.P_PV_2EV_1 + self.P_PV_2L_1
+        PV_consumed_forecast = (gp.quicksum(self.P_PV_2EV) + gp.quicksum(self.P_PV_2L))/self.n_samples
+        
+        SOC_difference =  gp.quicksum([self.SOC_min_departure - self.SOC[self.t_end,i] for i in self.range_samples])
+        penalty = self.buy_spot_price[self.t_departure]
+        Power_difference = SOC_difference*self.BC_EV
+        
+        lambda_cost = 1 - lambda_soc
+        
         if  method == 'deterministic' or method == 'day_ahead' or method == 'expected value':
-            self.E_bought = self.P_grid_bought_1* self.buy_spot_price[self.t_decision] + np.sum([self.P_grid_bought[t,i] * self.buy_spot_price[t] for t in self.time_horizon for i in self.range_samples])/self.n_samples
-            self.E_sold = self.P_grid_sold_1* self.sell_spot_price[self.t_decision] + np.sum([self.P_grid_sold[t,i] * self.sell_spot_price[t] for t in self.time_horizon for i in self.range_samples])/self.n_samples
-            self.PV_consumed = self.P_PV_2EV_1 + self.P_PV_2L_1 + (gp.quicksum(self.P_PV_2EV) + gp.quicksum(self.P_PV_2L))/self.n_samples
+            objective = cost_decision + cost_forecast/self.n_samples + Power_difference/self.n_samples
+            #self.PV_consumed = self.PV_consumed_decision + self.PV_consumed_forecast/self.n_samples
             
         elif method == 'CVaR':
             alpha = parameters['alpha']
-            self.E_bought = (gp.quicksum(self.P_grid_bought)/((1-alpha) *self.n_samples))
-        
-        elif method == 'Markowitz':
-            alpha = parameters['alpha']
-            beta = parameters['beta']
-            self.E_bought = (gp.quicksum(self.P_grid_bought)*beta/((1-alpha( *self.n_samples))))
-        
-        
-        # if self.t_decision < self.t_departure and self.forecasting:
+            objective = cost_decision + cost_forecast/((1-alpha)*self.n_samples) + Power_difference/((1-alpha)*self.n_samples)
             
-        self.SOC_difference =  gp.quicksum([self.SOC_min_departure - self.SOC[self.t_end,i] for i in self.range_samples])/self.n_samples
-        penalty = 1.5 * self.buy_spot_price[self.t_departure]
-        self.Power_difference = self.SOC_difference*self.BC_EV
+        elif method == 'Markowitz':
+            alpha_cost = parameters['alpha_cost']
+            alpha_soc = parameters['alpha_soc']
+            
+            objective = cost_decision + lambda_cost * cost_forecast/((1-alpha_cost)*self.n_samples) + lambda_soc* Power_difference/((1-alpha_soc)*self.n_samples)
+
         
-        
-        self.PV_consumed = self.P_PV_2EV_1 + self.P_PV_2L_1 + (gp.quicksum(self.P_PV_2EV) + gp.quicksum(self.P_PV_2L))/self.n_samples
-        
-        self.PV_total = self.realization_PV + self.predictions_PV.sum().sum()/self.n_samples
-        
-        lambda_2 = 1 - lambda_1
-        
-        #self.m.setObjective(lambda_1 * (self.PV_consumed/self.PV_total) - lambda_2 * self.SOC_difference , GRB.MAXIMIZE)
-        
-        self.m.setObjective(self.E_bought - self.E_sold + self.Power_difference)
-        
-        
-        
-        # else:
-        #     self.m.setObjective(self.P_grid_bought_1 + self.E_bought)
-        
+        self.m.setObjective(objective)
+
         self.m.write('model_1.lp')
         self.m.params.TimeLimit=60
         self.m.optimize()
-        
-        if self.m.status == GRB.INFEASIBLE:
-            count = 0
-            #while self.m.status == GRB.INFEASIBLE or count <5:
-            count +=1
-            print(count)
-            print(f'Decision: {self.t_decision}')
-            print(f'Departure: {self.t_departure}')
-            print(f'SOC: {self.current_SOC}')
-            
-            
-        #     for i in self.range_samples:
-        #         self.m.remove(self.m.getConstrByName(f'SOC_departure[{i}]'))
-            
-
-        #     self.m.setObjective(gp.quicksum(self.SOC)/self.n_samples, GRB.MAXIMIZE)
-        #     self.m.update()
-        #     self.m.optimize()
-        #     #print(self.SOC[self.t_forecast,0].x)
-
-        #     self.constraints_violation[t_decision] = self.t_decision
                 
-                
-        self.SOC_min_departure = self.EV.SOC_min_departure 
+
         self.update_decisions()
 
-        self.cost = self.m.ObjVal
-        
-        self.extra_cost = max(0, self.BC_EV * np.sum([self.SOC_min_departure - self.SOC[self.t_end,i].x for i in self.range_samples])/self.n_samples)
-        
         
     def update_decisions(self):
         
@@ -457,6 +426,9 @@ class Model:
         SOC = [self.current_SOC]
         SOC.extend([np.sum([self.SOC[t,i].x for i in self.range_samples])/self.n_samples for t in self.time_horizon])
 
+        dataset['soc'] = SOC
+        dataset['avail'] = list(self.EV_availability)
+        dataset['episode'] = self.episode
 
         return dataset
 

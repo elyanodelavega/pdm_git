@@ -407,6 +407,7 @@ class Forecast_ARIMA:
         
         self.dataset = data.loc[:,pred_variable]
         
+        self.t_res = int((self.data.index[1] - self.data.index[0]).seconds)/3600
         
     def evaluate_arima_model(self, arima_order):
     
@@ -450,7 +451,7 @@ class Forecast_ARIMA:
     def predict(self, t_forecast, t_end, dataframe = True, best_conf = (2, 1, 1), 
                         plot_results = False, conf_interval = False, iterative = False, n_past = 300):
         
-        t_decision = t_forecast - pd.Timedelta(hours = 1)
+        t_decision = t_forecast - pd.Timedelta(hours = self.t_res)
         previous = list(self.data.loc[:t_decision, self.pred_variable])[-n_past:]
         forecast_window = list(self.data.loc[t_forecast:t_end, self.pred_variable])
         time_window = self.data.loc[t_forecast:t_end].index
@@ -513,7 +514,7 @@ class Forecast_ARIMA:
         
     def predict_with_average(self, t_forecast, t_end):
         
-        t_decision = t_forecast - pd.Timedelta(hours = 1)
+        t_decision = t_forecast - pd.Timedelta(hours = self.t_res)
         hours = [t.hour for t in self.data.index]
         self.data['hour'] = hours
         hours_list = np.unique(hours)

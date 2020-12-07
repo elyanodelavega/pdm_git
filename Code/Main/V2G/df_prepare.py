@@ -36,8 +36,22 @@ def data_spot_market_csv(file_name):
                                month = t.month, year = 2020)for t in Data.index]
     Data.set_index('dt', inplace=True, drop=True)
 
-    
+    return Data
 
+def prices_romande_energie(Data, t_low = 0.14, t_high = 0.21, hour_start = 6, 
+                           hour_end = 21, feed_in = 0.09):
+    
+    tarifs = {}
+    hours = np.arange(24)
+    for h in hours:
+        if h <hour_start or h > hour_end:
+            tarifs[h] = t_low
+        else:
+            tarifs[h] = t_high
+        
+    for t in Data.index:
+        Data.loc[t,'buy'] = tarifs[t.hour]/1000
+        Data.loc[t,'sell'] = feed_in/1000
     return Data
 
 def time_to_trigo(time_list):
@@ -51,7 +65,7 @@ def time_to_trigo(time_list):
     return hours_trigo, days_trigo
     
 
-def data_PV_csv(df_file_name, hourly_data = True, to_trigo = True):
+def data_PV_csv(df_file_name, hourly_data = True, start_month = 5, year = 2020):
     df = pd.read_csv(df_file_name)
     t_res = float(df['ts'][0].split(':')[1])
     df['dt'] = pd.to_datetime(df['dt'], dayfirst= True)
@@ -61,14 +75,15 @@ def data_PV_csv(df_file_name, hourly_data = True, to_trigo = True):
     
     data = df.copy()
     
+    start = pd.Timestamp(day = 1, month = start_month, year = year)
+    
+    data = data[start:]
     
     if hourly_data:
         start = data.index[0]
         len_hours = int(data.shape[0]/(60/t_res))
         hours_indices = [start + pd.Timedelta(hours = i) for i in range(len_hours)]
         data = data.loc[data.index.intersection(hours_indices)]
-    
-    # if to_trigo:
-    #     data['trigo_hours'], data['trigo_days'] = time_to_trigo(data.index)
+
     
     return data

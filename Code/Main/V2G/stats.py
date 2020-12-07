@@ -11,20 +11,20 @@ import seaborn as sns
 palette = sns.color_palette()
 color_codes = {'naive':palette[1],
                'rbc':palette[2],
-               'opti':palette[5],
-               'mpc_d':palette[6],
-               'mpc_s':palette[8],
-               'ddqn':palette[0],
+               'v2g_opti':palette[5],
+               'v2g_mpc_d':palette[6],
+               'v2g_mpc_s':palette[8],
+               'v2g_mpc_s_cvar':palette[0],
                'ddpg':palette[3],
                'pdqn':palette[4]}
 
-folder_path = 'C:/Users/Yann/Documents/EPFL/pdm_git/pdm_git/Code/Main/'
+folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/'
 #%%
 def quick_stats(decisions):
     data = decisions.copy()
     
     df = data.groupby('episode').sum()
-    
+
     df.drop(['soc'], axis = 1, inplace = True)
     
     soc_arr = [data.soc[0]*100]
@@ -47,6 +47,18 @@ def quick_stats(decisions):
     
     df['grid_bought'] = grid_bought
     
+    thresholds = data.groupby('episode').quantile([0.9])['grid_load'].values
+    
+    power_bought_95 = []
+    
+    for i, e in enumerate(np.unique(data.episode)):
+        
+        data_episode = data[data.episode == e]
+        
+        power_bought_95.append(sum(data_episode[data_episode['grid_load'] <= thresholds[i]].sum(), data_episode['grid_ev'].sum())/1000)
+    
+    df['Energy_bought'] = power_bought_95
+    
     df['p_ev'] = grid_bought
     
     return df
@@ -56,11 +68,11 @@ def quick_stats(decisions):
 
 
 methods = ['Fully deterministic',  'MPC deterministic', 
-           'MPC stochastic']
+           'MPC stochastic', 'MPC stochastic CVaR']
 
-names = ['opti', 'mpc_d', 'mpc_s']
+names = ['v2g_opti', 'v2g_mpc_d', 'v2g_mpc_s', 'v2g_mpc_s_cvar']
 
-decisions = {n: pd.read_csv(folder_path+n+'.csv', index_col = 0) for n in names}
+decisions = {n: pd.read_csv(folder_path+'results_'+n+'_10.csv', index_col = 0) for n in names}
 
 names = list(decisions.keys())
 
@@ -69,31 +81,32 @@ for n in names:
     new_index = pd.to_datetime(df.index, dayfirst = True)
     df.index = new_index
 
-algorithms = {'opti': 'Fully deterministic', 'mpc_d': 'MPC deterministic', 
-           'mpc_s': 'MPC stochastic'}
+algorithms = {'v2g_opti': 'Fully deterministic', 'v2g_mpc_d': 'MPC deterministic', 
+           'v2g_mpc_s': 'MPC stochastic', 'v2g_mpc_s_cvar':'MPC stochastic CVaR'}
 
-stats = {n: quick_stats(decisions[n]) for n in names}
 
-metrics = ['self_cons', 'soc_dep', 'grid_bought']
+stats = {n: quick_stats(decisions[n][decisions[n].episode < 55]) for n in names}
+
+metrics = ['self_cons', 'soc_dep', 'Energy_bought']
 
 stats_df = {m: pd.DataFrame(data = {algorithms[n]: list(stats[n].loc[:,m] )
                              for n in names}) for m in metrics}
 
-n_episodes = len(stats['opti'])
+n_episodes = len(stats['v2g_opti'])
 
-range_episodes = range(int(stats['opti'].index[0]), int(stats['opti'].index[-1] + 1))
+range_episodes = range(int(stats['v2g_opti'].index[0]), int(stats['v2g_opti'].index[-1] + 1))
 #%% bar plot variation
 
 fig, axes = plt.subplots(3,1, figsize=(20,12), sharey = True, sharex = True)
 #plt.suptitle(' Relative comparison with optimal solution', fontsize = 25)
 
-benchmark = 'opti'
+benchmark = 'v2g_opti'
 power = []
 soc = []
 self_cons = []
 
 
-titles = ['PV self-consumption', 'SOC at departure', 'Power bought']
+titles = ['PV self-consumption', 'SOC at departure', 'Max Power bought']
 for n in list(stats.keys()):
     if n == benchmark:
         continue
@@ -122,11 +135,11 @@ plt.xlabel('Episode', fontsize = 22)
     
     
 #%% Box plot self, soc, cons
-fig, axes = plt.subplots(len(methods),1, sharex = True, figsize=(20,13))
+import matplotlib.patches as mpatches
+metrics = ['self_cons', 'soc_dep', 'Energy_bought']
+fig, axes = plt.subplots(len(metrics),1, sharex = True, figsize=(20,13))
 
-
-metric = ['self_cons', 'soc_dep', 'grid_bought']
-for i, m in enumerate(metric):
+for i, m in enumerate(metrics):
     
     s_df = stats_df[m]
      
@@ -134,15 +147,16 @@ for i, m in enumerate(metric):
     
     #axes[i, 0].set_ylabel(names_map[n], fontsize = 23)
 
-
 axes[0].set_title('PV self-consumption', fontsize = 20)
 axes[0].set_ylabel('%', fontsize = 20)
 axes[1].set_title('SOC at departure', fontsize = 22)
 axes[1].set_ylabel('%', fontsize = 20)
-axes[2].set_title('Power bought', fontsize = 22)
-axes[2].set_ylabel('kW', fontsize = 20)
-for i in range(3):
+axes[2].set_title('Energy bought 90%', fontsize = 22)
+axes[2].set_ylabel('kWh', fontsize = 20)
+for i in range(len(metrics)):
     axes[i].grid()
+    
+
 plt.show()
 
 #%% Hist Grid ev
@@ -223,7 +237,7 @@ plt.show()
 
 #%%
 import numpy as np
-soc_arr = np.unique(stats['opti']['soc_arr'])
+soc_arr = np.unique(stats['v2g_opti']['soc_arr'])
 fig, axes = plt.subplots(len(soc_arr), len(names), sharex = True, sharey = True, figsize=(16,9))
 
 x = [np.round(0.1*i,2) for i in range(11)]
@@ -251,7 +265,7 @@ for i, s_arr in enumerate(soc_arr):
             
 for j, n in enumerate(names):
     axes[0,j].set_title(algorithms[n])
-    axes[3,j].set_xlabel('Charging time %')
+    axes[len(soc_arr)-1,j].set_xlabel('Charging time %')
 
 ticks = np.arange(0,11)
 labels = [str(t*10) for t in ticks]
@@ -262,12 +276,12 @@ for i, s_arr in enumerate(soc_arr):
     axes[i,0].set_ylabel(f'SOC arrival: {int(s_arr)}%')
     for col in range(3):
         axes[i,col].set_xticks(ticks)
-        axes[3,col].set_xticklabels(labels)
-        axes[3,col].set_xlabel('Charging time %', fontsize = 16)
+        axes[len(soc_arr)-1,col].set_xticklabels(labels)
+        axes[len(soc_arr)-1,col].set_xlabel('Charging time %', fontsize = 16)
 
 #%%
 import numpy as np
-soc_arr = np.unique(stats['opti']['soc_arr'])
+soc_arr = np.unique(stats['v2g_opti']['soc_arr'])
 fig, axes = plt.subplots(len(soc_arr), sharex = True, sharey = True, figsize=(16,9))
 
 x = [np.round(0.1*i,2) for i in range(11)]
@@ -290,7 +304,7 @@ for i, s_arr in enumerate(soc_arr):
         axes[i].grid()
 handles, labels= axes[0].get_legend_handles_labels()
 fig.legend(handles,labels, loc='upper center',ncol=2 , fontsize = 16)
-axes[3].set_xlabel('Charging time %',fontsize = 16)
+axes[len(soc_arr)-1].set_xlabel('Charging time %',fontsize = 16)
 
 ticks = np.arange(0,110,10)
 labels = [str(t) for t in ticks]
@@ -305,14 +319,14 @@ for i, s_arr in enumerate(soc_arr):
 
     for col in range(3):
         axes[i].set_xticks(ticks)
-        axes[3].set_xticklabels(labels)
-        axes[3].set_xlabel('Charging time %', fontsize = 16)
+        axes[len(soc_arr)-1].set_xticklabels(labels)
+        axes[len(soc_arr)-1].set_xlabel('Charging time %', fontsize = 16)
 
 
 #%%
 import numpy as np
 import math
-fig, axes = plt.subplots(len(names),2, sharex = True, sharey = True, figsize=(16,9))
+fig, axes = plt.subplots(len(names),1, sharex = True, sharey = True, figsize=(16,9))
 
 
 for i, n in enumerate(names):
@@ -321,30 +335,31 @@ for i, n in enumerate(names):
     episodes = np.unique(decision.episode)
     grid_ev_array = np.zeros((len(episodes),len(x)-1))
     pv_ev_array = np.zeros((len(episodes),len(x)-1))
+    ev_array = np.zeros((len(episodes),len(x)-1))
     for e in decision.episode:
         ep = decision[decision.episode == e]
         time_charging = ep.avail.sum()
         pv_ev = list(ep['pv_ev'].values/1000)
         grid_ev = list(ep['grid_ev'].values/1000)
+        ev = list((ep['pv_ev'].values+ep['grid_ev'].values) /1000)
         t = np.dot(x,time_charging)
         t = [math.floor(i) for i in t]
 
-        quantiles_pv = [np.median(pv_ev[t[i]:t[i+1]]) for i in range(len(t)-1)]
-        pv_ev_array[int(e-1),:] = quantiles_pv
+        quantiles_ev = [np.median(ev[t[i]:t[i+1]]) for i in range(len(t)-1)]
+        ev_array[int(e-1),:] = quantiles_ev
 
-        quantiles_g = [np.median(grid_ev[t[i]:t[i+1]]) for i in range(len(t)-1)]
-        grid_ev_array[int(e-1),:] = quantiles_g
+        # quantiles_g = [np.median(grid_ev[t[i]:t[i+1]]) for i in range(len(t)-1)]
+        # grid_ev_array[int(e-1),:] = quantiles_g
 
-    df_pv = pd.DataFrame(data = {int(x[q]*100): pv_ev_array[:,q] for q in range(len(x)-1)})
+    # df_pv = pd.DataFrame(data = {int(x[q]*100): pv_ev_array[:,q] for q in range(len(x)-1)})
 
-    sns.boxplot(data = df_pv, ax = axes[i,0], orient = 'v', color = color_codes[n])
+    # sns.boxplot(data = df_pv, ax = axes[i,0], orient = 'v', color = color_codes[n])
     
-    df_grid = pd.DataFrame(data = {int(x[q]*100): grid_ev_array[:,q] for q in range(len(x)-1)})
+    df_grid = pd.DataFrame(data = {int(x[q]*100): ev_array[:,q] for q in range(len(x)-1)})
 
-    sns.boxplot(data = df_grid, ax = axes[i,1], orient = 'v', color = color_codes[n])
+    sns.boxplot(data = df_grid, ax = axes[i], orient = 'v', color = color_codes[n])
     
-    axes[i,0].grid()
-    axes[i,1].grid()
+    axes[i].grid()
     
     
     
@@ -353,80 +368,75 @@ for i, n in enumerate(names):
     labels[0] = labels[0] + '\n' + 'Arrival'
     labels[-1] = labels[-1] + '\n' + 'Departure'
     for row in range(3):
-        axes[row,0].set_ylabel('kW', fontsize = 16)
-        for col in range(2):
-            axes[row,col].set_xticks(ticks)
+        axes[row].set_ylabel('kW', fontsize = 16)
+        axes[row].set_title(algorithms[names[row]], fontsize = 18)
+
+    axes[2].set_xticks(ticks)
     
-    axes[2,0].set_xticklabels(labels)
-    axes[2,0].set_xlabel('Charging time %', fontsize = 16)
-    axes[0,0].set_title('PV', fontsize = 18)
-    axes[0,1].set_title('Grid', fontsize = 18)
+    axes[2].set_xticklabels(labels)
+    axes[2].set_xlabel('Charging time %', fontsize = 16)
     
-    plt.suptitle('EV Charge by sources', fontsize = 22)
+    # axes[0].set_title('Grid', fontsize = 18)
+    
+    #plt.suptitle('EV Charge by sources', fontsize = 22)
     
         
 #%%
 import numpy as np
 import math
-fig, axes = plt.subplots(len(names),2, sharex = True, sharey = True, figsize=(16,9))
+fig, axes = plt.subplots(len(names),1, sharex = True, sharey = True, figsize=(16,9))
 
 
 for i, n in enumerate(names):
     
     decision = decisions[n][decisions[n].avail > 0]
     episodes = np.unique(decision.episode)
-    grid_ev_array = np.zeros((len(episodes),len(x)-1))
-    pv_ev_array = np.zeros((len(episodes),len(x)-1))
+    ev_array = np.zeros((len(episodes),len(x)-1))
     for e in decision.episode:
         ep = decision[decision.episode == e]
         time_charging = ep.avail.sum()
-        pv_ev = list(ep['pv_ev'].values/1000)
-        grid_ev = list(ep['grid_ev'].values/1000)
+        ev = list((ep['pv_ev'].values+ep['grid_ev'].values) /1000)
         # pv = list(ep['grid_ev'].values/1000)
         # grid = list((ep['grid_ev'].values+ ep['grid_load'].values) /1000)
         t = np.dot(x,time_charging)
         t = [math.floor(i) for i in t]
 
-        quantiles_pv = [sum(p > 0.001 for p in pv_ev[t[i]:t[i+1]]) for i in range(len(t)-1)]
-        pv_ev_array[int(e-1),:] = quantiles_pv
+        quantiles_ev = [sum(p > 0.001 for p in ev[t[i]:t[i+1]]) for i in range(len(t)-1)]
+        ev_array[int(e-1),:] = quantiles_ev
 
-        quantiles_g = [sum(p > 0.001 for p in grid_ev[t[i]:t[i+1]]) for i in range(len(t)-1)]
-        grid_ev_array[int(e-1),:] = quantiles_g
+    #     quantiles_g = [sum(p > 0.001 for p in grid_ev[t[i]:t[i+1]]) for i in range(len(t)-1)]
+    #     grid_ev_array[int(e-1),:] = quantiles_g
 
-    df_pv = pd.DataFrame(data = {int(x[q]*100): pv_ev_array[:,q] for q in range(len(x)-1)})
+    # df_pv = pd.DataFrame(data = {int(x[q]*100): pv_ev_array[:,q] for q in range(len(x)-1)})
 
-    sns.boxplot(data = df_pv, ax = axes[i,0], orient = 'v', color = color_codes[n])
+    # sns.boxplot(data = df_pv, ax = axes[i,0], orient = 'v', color = color_codes[n])
     
-    df_grid = pd.DataFrame(data = {int(x[q]*100): grid_ev_array[:,q] for q in range(len(x)-1)})
+    df_grid = pd.DataFrame(data = {int(x[q]*100): ev_array[:,q] for q in range(len(x)-1)})
 
-    sns.boxplot(data = df_grid, ax = axes[i,1], orient = 'v', color = color_codes[n])
+    sns.boxplot(data = df_grid, ax = axes[i], orient = 'v', color = color_codes[n])
     
-    axes[i,0].grid()
-    axes[i,1].grid()
-    
+    axes[i].grid()
     
     
-    xticks = np.arange(0,11)
-    xlabels = [str(t*10) for t in xticks]
-    xlabels[0] = xlabels[0] + '\n' + 'Arrival'
-    xlabels[-1] = xlabels[-1] + '\n' + 'Departure'
+    
+    ticks = np.arange(0,11)
+    labels = [str(t*10) for t in ticks]
+    labels[0] = labels[0] + '\n' + 'Arrival'
+    labels[-1] = labels[-1] + '\n' + 'Departure'
     for row in range(3):
-        axes[row,0].set_ylabel('N', fontsize = 16)
-        for col in range(2):
-            axes[row,col].set_xticks(xticks)
+        axes[row].set_ylabel('N', fontsize = 16)
+        axes[row].set_title(algorithms[names[row]], fontsize = 18)
+
+    axes[2].set_xticks(ticks)
     
-    axes[2,0].set_xticklabels(xlabels)
-    axes[2,0].set_xlabel('Charging time %', fontsize = 16)
-    axes[0,0].set_title('PV', fontsize = 18)
-    axes[0,1].set_title('Grid', fontsize = 18)
-    
-    plt.suptitle('EV Number of charge by sources', fontsize = 22)
+    axes[2].set_xticklabels(labels)
+    axes[2].set_xlabel('Charging time %', fontsize = 16)
     
     
     
 #%%
 import numpy as np
-soc_arr = np.unique(stats['opti']['soc_arr'])
+soc_arr = np.unique(stats['v2g_opti']['soc_arr'])
 fig, axes = plt.subplots( len(names),len(soc_arr), sharex = True, sharey = True, figsize=(16,9))
 
 x = [np.round(0.1*i,2) for i in range(11)]
@@ -464,13 +474,104 @@ labels[-1] = labels[-1] + '\n' + 'Departure'
            
 for j, n in enumerate(names):
     axes[j,0].set_ylabel(algorithms[n]+'\n SOC [%]')
-    for col in range(4):
+    for col in range(len(soc_arr)):
         axes[0,col].set_title(f'SOC arrival: {int(soc_arr[col])}%')
         axes[j,col].set_xticks(ticks)
         axes[j,col].set_xticklabels(labels)
         axes[2,col].set_xlabel('Charging time %', fontsize = 13)
 
     
+#%%
+import numpy as np
+import math
+import matplotlib.patches as mpatches
+#soc_arr = np.unique(stats['opti']['soc_arr'])
+avail = np.unique(stats['v2g_opti']['avail'])
+
+bins = list(np.arange(11,30,4))
+bins.append(31)
+x = [np.round(0.1*i,2) for i in range(11)]
+
+fig, axes = plt.subplots(len(names)+2,len(bins)-1, sharex = True, figsize=(16,11))
+
+ticks = np.arange(0,11,2.5)
+labels = [str(int(t)*10)+'%' for t in ticks]
+labels[0] = labels[0] + '\n' + 'Arr.'
+labels[-1] = labels[-1] + '\n' + 'Dep.'
+#plt.suptitle(f'SOC at arrival: {s_arr}%',fontsize = 18)
+for i in range(len(bins)-1):
+    a_low = int(bins[i])
+
+    a_high = int(bins[i+1])
+
+    for j, n in enumerate(names):
+        
+        decision = decisions[n]
+        lower = stats[n][stats[n].avail < a_high]
+        upper = lower[lower.avail >= a_low]
+        episodes = upper.index
+        
+        soc_array = np.zeros((len(episodes),len(x)))
+        pv_array = np.zeros((len(episodes),len(x)))
+        load_array = np.zeros((len(episodes),len(x)))
+        for k, e in enumerate(episodes):
+            ep = decision[decision.episode == int(e)]
+            td = list(ep.avail).index(0)
+            soc = ep.soc[:td+1]*100
+            pv = ep.pv[:td+1]/1000
+            load = ep.load[:td+1]/1000
+            
+            time_charging = ep.avail.sum()
+            t = np.dot(x,time_charging)
+            t = [math.floor(i) for i in t]
+
+            quantiles_soc = soc[t]
+            quantiles_pv = pv[t]
+            quantiles_load = load[t]
+            
+            soc_array[k,:] = quantiles_soc
+            pv_array[k,:] = quantiles_pv
+            load_array[k,:] = quantiles_load
+
+        df = pd.DataFrame(data = {int(x[q]*100): soc_array[:,q] for q in range(len(x))})
+    
+        sns.boxplot(data = df, ax = axes[j+2,i], orient = 'v', color = color_codes[n])
+        
+        df = pd.DataFrame(data = {int(x[q]*100): pv_array[:,q] for q in range(len(x))})
+    
+        sns.boxplot(data = df, ax = axes[0,i], orient = 'v', color = 'grey')
+        
+        df = pd.DataFrame(data = {int(x[q]*100): load_array[:,q] for q in range(len(x))})
+    
+        sns.boxplot(data = df, ax = axes[1,i], orient = 'v', color = 'grey')
+        
+        axes[j+2,i].grid()
+        
+        axes[j+2,i].set_xticks(ticks)
+        
+        if i > 0:
+            axes[j+2,i].set_yticklabels(' ')
+        
+        axes[j+2,0].set_ylabel('SOC [%]')
+        
+        axes[j+2,i].set_ylim([15,105])
+        
+        
+    
+    power = ['PV','Load']
+    
+    for k in range(2):
+        axes[k,i].grid()
+        axes[k,i].set_ylim([0,31])
+        if i > 0:
+            axes[k,i].set_yticklabels(' ')
+        axes[k,0].set_yticks(np.arange(0,31,10))
+        axes[k,0].set_ylabel(f'{power[k]} [kW]')
     
     
+    axes[4,i].set_xticklabels(labels)
+    axes[0,i].set_title(f'Charging time {a_low} - {a_high-1}h', fontsize = 14)  
     
+patches = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in names]
+fig.legend(handles=patches, loc='upper center',ncol=len(names))
+           

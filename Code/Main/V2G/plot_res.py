@@ -15,80 +15,175 @@ palette = sns.color_palette()
 plt.rcParams.update({'font.size': 14})
 scale_PV = 10000/2835
 
-def confidence_interval(df, q, scale = 1):
+def confidence_interval(realization, df, q, scale = 1):
     arr = np.array(df.values).astype('float64')
     med = np.median(arr, axis = 1)
     low = np.quantile(arr, 1-q, axis = 1)
     high = np.quantile(arr, q, axis = 1)
     
+    med_list = [realization]
+    low_list = [realization]
+    high_list = [realization]
     
-    med = [m*scale for m in med]
-    low = [l*scale for l in low]
-    high = [h*scale for h in high]
-    return low, med, high
+    med_list.extend([m*scale for m in med])
+    low_list.extend([l*scale for l in low])
+    high_list.extend([h*scale for h in high])
+
+    return low_list, med_list, high_list
 
 
-        
-        
-def plot_MPC(decisions, results, SOC_distribution = None, predictions_distribution = None, figname = None, img_path = None):
+def plot_MPC_det(decisions, t_decision, results, pv_pred, load_pred, figname = None, img_path = None):
+
+    decision = decisions[:t_decision]
+
     
-    t_decision = decisions.index[-1]
+    episode = decision['episode'][0]
     
-    dataset = decisions.append(results[1:])
+    n = len(decision)
+
     
-    n = min(len(decisions), 12)
-    m = 24 - n
+    results['pv'] = pv_pred*scale_PV
+    results['load'] = load_pred
+    dataset = decision.append(results[1:])
     
-    t_start = t_decision - pd.Timedelta(hours = n)
-    t_end = t_decision + pd.Timedelta(hours = m-1)
-    dataset = dataset[t_start:t_end]
-    dataset.fillna(0, inplace = True)
-    
-    positions = []
-    if 'episode' not in dataset.columns:
-        episodes = []
-        count = 1
-        row = 0
-                    
-        while row < len(dataset):
-            if dataset['avail'][row] == 1:
-                pos = row
-                while dataset['avail'][row] == 1:
-                    episodes.append(count)
-                    row += 1
-                    if row == len(dataset):
-                        break
-                positions.append((pos,row-1))
-            else:
-                count += 1
-                while dataset['avail'][row] == 0:
-                    episodes.append(0)
-                    row += 1
-                    if row == len(dataset):
-                        break
-        dataset['episode'] = episodes
+    episode_length = len(dataset)
+
+    t_start = dataset.index[0]
+    t_end = dataset.index[-1]
+
     
     dataset['pv'] = dataset['pv']/1000 # to kW
-    dataset['pv_forecast'] = dataset['pv_forecast']/1000 # to kW
     dataset['load'] = dataset['load']/1000 # to kW
     dataset['pv_ev'] = dataset['pv_ev']/1000 # to kW
     dataset['grid_ev'] = dataset['grid_ev']/1000 # to kW
-    # dataset['pv_ev_real'] = dataset['pv_ev_real']/1000 # to kW
-    # dataset['grid_ev_real'] = dataset['grid_ev_real']/1000 # to kW
+    dataset['ev_grid'] = -dataset['ev_grid']/1000 # to kW
+    dataset['ev_load'] = -dataset['ev_load']/1000 # to kW
+
     dataset['soc'] = dataset['soc']*100
-    print(dataset.shape)
+
 
    
     time = list(dataset.index)
 
     # plot
-    fig, axes = plt.subplots(2,1, sharex=True, figsize=(10,7))
+    fig, axes = plt.subplots(2,1, sharex=True, figsize=(16,9))
     plt.title(f'Decision at {t_decision}')
     x = range(len(dataset))
 
     axes[0].set_ylabel('Power [kW]', color='black')
     axes[1].set_ylabel('Power [kW]', color='black')
-    axes[0].set_ylim([0,11])
+    axes[0].set_ylim([0,16])
+
+    ticks = np.arange(0, max(x)+1, step=6)
+    ticks = [i for i in range(0, max(x) + 1, 6)]
+    labels = [str(time[ticks[i]].hour) + ':00' for i in range(len(ticks))]
+    plt.xticks(ticks = ticks, labels = labels)
+
+    ax2 = axes[1].twinx() # ax for plotting EV SOC evolution
+    ax2.set_ylabel('EV SoC [%]', color='black')
+    ax2.grid(False)
+     # episodes annotation
+    #num_episodes = max(dataset['episode'])
+    
+    ypos = math.floor(axes[0].get_ylim()[1])-0.5
+
+    ta = 0
+    if 0 in list(dataset.avail):
+
+        td = list(dataset.avail).index(0)
+        arrowstyle='<->'
+    else:
+        td = len(dataset)-1
+        arrowstyle='<-'
+
+    axes[0].annotate(text='', xy=(ta,ypos), xytext=(td,ypos), arrowprops=dict(arrowstyle=arrowstyle,color='black'))
+    axes[0].annotate(text='Episode '+str(int(episode)),xy=(((ta+td)/2), ypos+0.2), fontsize=12.0, ha='center')
+
+    # top subplot
+    
+    axes[0].fill_between(x[:n], dataset['pv'][:n], color=palette[2], alpha=0.3, label='Actual PV')
+    axes[0].plot(x[:n], dataset['pv'][:n], color=palette[2])
+    
+    axes[0].fill_between(x[:n], dataset['load'][:n], color=palette[3], alpha=0.3, label='Actual load')
+    axes[0].plot(x[:n], dataset['load'][:n], color=palette[3])
+    
+    
+    
+    #axes[0].fill_between(x[n-1:], dataset['pv'][n-1:], color=palette[2], alpha=0.5)
+    axes[0].plot(x[n-1:], dataset['pv'][n-1:],marker='o', color=palette[2], label='PV forecast')
+    
+    #axes[0].fill_between(x[n-1:], dataset['load'][n-1:], color=palette[3], alpha=0.5)
+    axes[0].plot(x[n-1:], dataset['load'][n-1:],marker='o', color=palette[3], label='load forecast')
+
+    axes[0].axvline(x=n-1, color = 'black')
+
+    # bottom subplot
+
+    ax2.plot(x, dataset['soc'], color=palette[7], marker='.', label='EV state of charge')
+    
+    #ax2.plot(x[:n], dataset['soc'][:n], color=palette[7], marker='.', label='EV state of charge')
+    axes[1].bar(x, dataset['pv_ev'], color=palette[8], edgecolor=palette[8], label='PV supplied to EV')
+    axes[1].bar(x, dataset['grid_ev'], color=palette[4], edgecolor=palette[4], label='Grid supplied to EV')
+    axes[1].bar(x, dataset['ev_grid'], color=palette[6], edgecolor=palette[6], label='EV supplied to Grid')
+    axes[1].bar(x, dataset['ev_load'], color=palette[5], edgecolor=palette[5], label='EV supplied to Load')
+    ax2.set_ylim([-100,110])
+    ticks = np.arange(0,110,25)
+    ax2.set_yticks(ticks)
+
+    ax2.set_yticklabels([str(t) for t in ticks])
+    axes[1].set_ylim([-4,4])
+
+    axes[1].axvline(x=n-1, color = 'black')
+
+    # plot legend
+    # plot legend
+    handles_1, labels_1 = axes[0].get_legend_handles_labels()
+    handles_2, labels_2 = [(a + b) for a, b in zip(axes[1].get_legend_handles_labels(),
+                                            ax2.get_legend_handles_labels())]
+    fig.legend(handles_1, labels_1, loc='upper center',facecolor='white', ncol = 4)
+    fig.legend(handles_2, labels_2, loc='lower center', bbox_to_anchor=(0.5,-0.05),facecolor='white', ncol = 3)
+    
+    if figname:
+        fig.savefig(img_path + figname )
+        plt.close(fig)
+        
+def plot_MPC_sto(decisions, t_decision, results, pv_pred, load_pred, soc_pred, figname = None, img_path = None):
+
+    decision = decisions[:t_decision]
+
+    episode = decision['episode'][0]
+    
+    idx_t = len(decision)-1
+
+    results['pv'] = pv_pred*scale_PV
+    results['load'] = load_pred
+    dataset = decision.append(results[1:])
+    
+    episode_length = len(dataset)
+
+    t_start = dataset.index[0]
+    t_end = dataset.index[-1]
+
+    
+    dataset['pv'] = dataset['pv']/1000 # to kW
+    dataset['load'] = dataset['load']/1000 # to kW
+    dataset['pv_ev'] = dataset['pv_ev']/1000 # to kW
+    dataset['grid_ev'] = dataset['grid_ev']/1000 # to kW
+    dataset['ev_grid'] = -dataset['ev_grid']/1000 # to kW
+    dataset['ev_load'] = -dataset['ev_load']/1000 # to kW
+
+    dataset['soc'] = dataset['soc']*100
+
+    time = list(dataset.index)
+
+    # plot
+    fig, axes = plt.subplots(2,1, sharex=True, figsize=(16,9))
+    plt.title(f'Decision at {t_decision}')
+    x = range(len(dataset))
+
+    axes[0].set_ylabel('Power [kW]', color='black')
+    axes[1].set_ylabel('Power [kW]', color='black')
+    axes[0].set_ylim([0,16])
 
     ticks = np.arange(0, max(x)+1, step=6)
     ticks = [i for i in range(0, max(x) + 1, 6)]
@@ -101,58 +196,72 @@ def plot_MPC(decisions, results, SOC_distribution = None, predictions_distributi
      # episodes annotation
     #num_episodes = max(dataset['episode'])
     ypos = math.floor(axes[0].get_ylim()[1])-0.5
-    for e in range(len(positions)):
-        xpos = positions[e]
-        axes[0].annotate(s='', xy=(xpos[0],ypos), xytext=(xpos[1],ypos), arrowprops=dict(arrowstyle='<->',color='black'))
-        axes[0].annotate(s='Episode '+str(e+1),xy=((xpos[0] + xpos[1])/2, ypos+0.2), fontsize=12.0, ha='center')
+    ta = 0
+    if 0 in list(dataset.avail):
 
-    
-    # top subplot
-    axes[0].fill_between(x, dataset['load'], color=palette[3], alpha=0.3, label='Building load')
-    axes[0].plot(x, dataset['load'], color=palette[3])
-    
-    
-    axes[0].fill_between(x[:n], dataset['pv'][:n], color=palette[0], alpha=0.3)
-    axes[0].plot(x[:n], dataset['pv'][:n],marker='o', color=palette[0], label='Actual PV')
-    
-    if predictions_distribution is not None:
-        predictions = predictions_distribution/1000
-        low_PV, med_PV, high_PV = confidence_interval(predictions.head(m), 0.8, scale = scale_PV)
-        axes[0].fill_between(x[n-1:n+m-1], low_PV[:m], high_PV[:m], color=palette[2], alpha=0.3, hatch = '//', label='Expected PV')
-        axes[0].plot(x[n-1:n+m-1], med_PV[:m],'--', color=palette[2])
+        td = list(dataset.avail).index(0)
+        arrowstyle='<->'
     else:
-        axes[0].fill_between(x[n-1:n+m-1], dataset.loc[t_decision:t_end,'pv_forecast'], color=palette[2], alpha=0.5)
-        axes[0].plot(x[n-1:n+m-1], dataset.loc[t_decision:t_end,'pv_forecast'], color=palette[2], label='PV forecast')
+        td = len(dataset)-1
+        arrowstyle='<-'
 
-    axes[0].axvline(x=n-1, color = 'black')
+    axes[0].annotate(text='', xy=(ta,ypos), xytext=(td,ypos), arrowprops=dict(arrowstyle=arrowstyle,color='black'))
+    axes[0].annotate(text='Episode '+str(int(episode)),xy=(((ta+td)/2), ypos+0.2), fontsize=12.0, ha='center')
+
+    # top subplot
+    
+    axes[0].fill_between(x[:idx_t+1], dataset['pv'][:idx_t+1], color=palette[2], alpha=0.3, label='Actual PV')
+    axes[0].plot(x[:idx_t+1], dataset['pv'][:idx_t+1], color=palette[2])
+    
+    axes[0].fill_between(x[:idx_t+1], dataset['load'][:idx_t+1], color=palette[3], alpha=0.3, label='Actual load')
+    axes[0].plot(x[:idx_t+1], dataset['load'][:idx_t+1], color=palette[3])
+    
+    rest = len(dataset) - (idx_t+1)
+
+    
+    predictions = pv_pred[:rest]/1000
+    
+    low_PV, med_PV, high_PV = confidence_interval(dataset.loc[t_decision,'pv'], predictions, 0.8, scale = scale_PV)
+    x_stop = idx_t + len(low_PV)
+    axes[0].fill_between(x[idx_t:x_stop], low_PV, high_PV, color=palette[2], alpha=0.3, hatch = '//')
+    axes[0].plot(x[idx_t:x_stop], med_PV, marker='o', color=palette[2], label='Forecast PV')
+    
+    axes[0].plot(x[idx_t:], dataset['load'][idx_t:],marker='o', color=palette[3], label='Forecast load')
+
+    axes[0].axvline(x=idx_t, color = 'black')
 
     # bottom subplot
-    
-    if SOC_distribution is not None:
-        SOC = SOC_distribution.head(m)
-        low_SOC, med_SOC, high_SOC = confidence_interval(SOC, 0.95, scale = 100)
-        ax2.plot(x[n-1:n+m-1], med_SOC, color=palette[7], marker='.')
-        ax2.fill_between(x[n-1:n+m-1], low_SOC, high_SOC, color=palette[7], alpha = 0.3)
-        ax2.set_ylim([0,110])
-    else:
-        ax2.plot(x[n-1:n+m-1], dataset['soc'][n-1:n+m-1], color=palette[7], marker='.', label='EV state of charge')
-    
-    ax2.plot(x[:n], dataset['soc'][:n], color=palette[7], marker='.', label='EV state of charge')
+
+    ax2.plot(x[:idx_t+1], dataset['soc'][:idx_t+1], color=palette[7], marker='.', label='EV state of charge')
+    SOC = soc_pred[1:rest]
+    low_SOC, med_SOC, high_SOC = confidence_interval(dataset.loc[t_decision,'soc'],SOC, 0.95, scale = 100)
+    x_stop = idx_t + len(low_SOC)
+    ax2.plot(x[idx_t:x_stop], med_SOC, color=palette[7], marker='.')
+    ax2.fill_between(x[idx_t:x_stop], low_SOC, high_SOC, color=palette[7], alpha = 0.3)
+    ax2.set_ylim([-100,110])
+    ticks = np.arange(0,110,25)
+    ax2.set_yticks(ticks)
+
+    ax2.set_yticklabels([str(t) for t in ticks])
+    #ax2.plot(x[n:], dataset['soc'][:n], color=palette[7], marker='.', label='EV state of charge')
     axes[1].bar(x, dataset['pv_ev'], color=palette[8], edgecolor=palette[8], label='PV supplied to EV')
     axes[1].bar(x, dataset['grid_ev'], color=palette[4], edgecolor=palette[4], label='Grid supplied to EV')
-    axes[1].set_ylim([0,6])
+    axes[1].bar(x, dataset['ev_grid'], color=palette[6], edgecolor=palette[6], label='EV supplied to Grid')
+    axes[1].bar(x, dataset['ev_load'], color=palette[5], edgecolor=palette[5], label='EV supplied to Load')
+    axes[1].set_ylim([-3.7,5])
+    # ax2.set_ylim([15,105])
+    axes[1].axvline(x=idx_t, color = 'black')
 
-    axes[1].axvline(x=n-1, color = 'black')
-
+    # plot legend
     # plot legend
     handles_1, labels_1 = axes[0].get_legend_handles_labels()
     handles_2, labels_2 = [(a + b) for a, b in zip(axes[1].get_legend_handles_labels(),
                                             ax2.get_legend_handles_labels())]
-    axes[0].legend(handles_1, labels_1, loc='upper right', bbox_to_anchor=(1, 0.9), facecolor='white', ncol = 3)
-    axes[1].legend(handles_2, labels_2, loc='upper right', facecolor='white')
+    fig.legend(handles_1, labels_1, loc='upper center',facecolor='white', ncol = 4)
+    fig.legend(handles_2, labels_2, loc='lower center',  bbox_to_anchor=(0.5,-0.05),facecolor='white', ncol = 3)
     
     if figname:
-        fig.savefig(img_path + figname)
+        fig.savefig(img_path + figname )
         plt.close(fig)
         
 def plot_results_day_ahead(df,predictions = None, figname = None, img_path = None):
@@ -284,57 +393,35 @@ def plot_results_day_ahead(df,predictions = None, figname = None, img_path = Non
 
 
     
-def plot_results_deterministic(df, figname = None, img_path = None):
+def plot_results_deterministic(decisions, episodes, figname = None, img_path = None):
     
-    dataset = df.copy()
-    
-    positions = []
-    if 'episode' not in dataset.columns:
-        episodes = []
-        count = 1
-        row = 0
-                    
-        while row < len(dataset):
-            if dataset['avail'][row] == 1:
-                pos = row
-                while dataset['avail'][row] == 1:
-                    episodes.append(count)
-                    row += 1
-                    if row == len(dataset):
-                        break
-                positions.append((pos,row-1))
-            else:
-                count += 1
-                while dataset['avail'][row] == 0:
-                    episodes.append(0)
-                    row += 1
-                    if row == len(dataset):
-                        break
-        dataset['episode'] = episodes
-    # if 'avail' in dataset.columns:
-    #     dataset = dataset[dataset['avail']>0]
-    #     dataset = dataset.drop('avail',axis=1)
+    dataset = decisions[decisions.episode.isin(episodes)]
     
     # transform data
-    dataset['pv_real'] = dataset['pv_real']/1000 # to kW
+    dataset['pv_real'] = dataset['pv']/1000 # to kW
     dataset['load'] = dataset['load']/1000 # to kW
     dataset['pv_ev'] = dataset['pv_ev']/1000 # to kW
     dataset['grid_ev'] = dataset['grid_ev']/1000 # to kW
     dataset['soc'] = dataset['soc']*100 # to %
+    dataset['ev_grid'] = -dataset['ev_grid']/1000 # to kW
+    dataset['ev_load'] = -dataset['ev_load']/1000 # to kW
+
     time = dataset.index
     # plot
-    fig, axes = plt.subplots(2,1, sharex=True, figsize=(10,7))
-    plt.title(time[0])
+    fig, axes = plt.subplots(2,1, sharex=True, figsize=(16,9))
+
     x = range(0,len(dataset))
+
     
     #plt.xlabel('Hours')
     axes[0].set_ylabel('Power [kW]', color='black')
     axes[1].set_ylabel('Power [kW]', color='black')
     axes[0].set_ylim([0,max(dataset['pv_real'].max(),dataset['load'].max())+3])
     #plt.xticks(np.arange(min(x), max(x)+1, step=4))
-    ticks = np.arange(0, max(x)+1, step=6)
+    ticks = np.arange(0, max(x)+1, step=int(len(dataset)/6))
+
     labels = [str(time[ticks[i]].hour) + ':00' for i in range(len(ticks))]
-    
+
     plt.xticks(ticks = ticks, labels = labels)
     
     ax2 = axes[1].twinx() # ax for plotting EV SOC evolution
@@ -342,20 +429,27 @@ def plot_results_deterministic(df, figname = None, img_path = None):
     
 #    ax1.grid(False)
     ax2.grid(False)
-    
     # episodes annotation
     ypos = math.floor(axes[0].get_ylim()[1])-0.5
-    for e in range(len(positions)):
-        xpos = positions[e]
-        axes[0].annotate(s='', xy=(xpos[0],ypos), xytext=(xpos[1],ypos), arrowprops=dict(arrowstyle='<->',color='black'))
-        axes[0].annotate(s='Episode '+str(e+1),xy=((xpos[0] + xpos[1])/2, ypos+0.2), fontsize=12.0, ha='center')
+    td = [i for i in range(1, len(dataset)) if dataset.avail[i-1] > dataset.avail[i]]
+    ta = [0]
+    ta.extend([i for i in range(1, len(dataset)) if dataset.avail[i-1] < dataset.avail[i]])
     
+    #episodes = np.unique(dataset.episode)
+    for i in range(len(td)):
+        x1 = ta[i]
+        x2 = td[i]
+    
+        axes[0].annotate(s='', xy=(x1,ypos), xytext=(x2,ypos), arrowprops=dict(arrowstyle='<->',color='black'))
+        axes[0].annotate(s='Episode '+str(int(episodes[i])),xy=(((x1+x2)/2), ypos+0.2), fontsize=12.0, ha='center')
+    
+
     # top subplot
-    axes[0].fill_between(x, dataset['load'], color=palette[3], alpha=0.3)
-    axes[0].plot(x, dataset['load'], color=palette[3], label='Building load')
+    axes[0].fill_between(x, dataset['load'], color=palette[3], alpha=0.3, label='Building load')
+    axes[0].plot(x, dataset['load'], color=palette[3])
     
-    axes[0].fill_between(x, dataset['pv_real'], color=palette[0], alpha=0.3)
-    axes[0].plot(x, dataset['pv_real'], color=palette[0], label='PV production')
+    axes[0].fill_between(x, dataset['pv_real'], color=palette[2], alpha=0.3, label='PV production')
+    axes[0].plot(x, dataset['pv_real'], color=palette[2])
     
 
     
@@ -363,18 +457,114 @@ def plot_results_deterministic(df, figname = None, img_path = None):
     ax2.plot(x, dataset['soc'], color=palette[7], marker='.', label='EV state of charge')
     axes[1].bar(x, dataset['pv_ev'], color=palette[8], edgecolor=palette[8], label='PV supplied to EV')
     axes[1].bar(x, dataset['grid_ev'], color=palette[4], edgecolor=palette[4], label='Grid supplied to EV')
-    
+    axes[1].bar(x, dataset['ev_grid'], color=palette[6], edgecolor=palette[6], label='EV supplied to Grid')
+    axes[1].bar(x, dataset['ev_load'], color=palette[5], edgecolor=palette[5], label='EV supplied to Load')
+    axes[1].set_ylim([-3.7,5])
+    ax2.set_ylim([-100,110])
+    ticks = np.arange(0,110,25)
+    ax2.set_yticks(ticks)
+
+    ax2.set_yticklabels([str(t) for t in ticks])
+
     # plot legend
     handles_1, labels_1 = axes[0].get_legend_handles_labels()
     handles_2, labels_2 = [(a + b) for a, b in zip(axes[1].get_legend_handles_labels(),
                                             ax2.get_legend_handles_labels())]
-    axes[0].legend(handles_1, labels_1, loc='upper right', bbox_to_anchor=(1, 0.9), facecolor='white')
-    axes[1].legend(handles_2, labels_2, loc='upper right', facecolor='white')
+    fig.legend(handles_1, labels_1, loc='upper center',facecolor='white', ncol = 4)
+    fig.legend(handles_2, labels_2, loc='lower center',  bbox_to_anchor=(0.5,-0.05),facecolor='white', ncol = 3)
     
     if figname:
         fig.savefig(img_path + figname )
         plt.close(fig)
-
+        
+def plot_results_comparison(decisions, episodes, figname = None, img_path = None):
+    
+    fig, axes = plt.subplots(len(decisions)+1,1, sharex=True, figsize=(16,11))
+    for k,m in enumerate(decisions.keys()):
+        df = decisions[m]
+        dataset = df[df.episode.isin(episodes)]
+        
+        # transform data
+        dataset['pv_real'] = dataset['pv']/1000 # to kW
+        dataset['load'] = dataset['load']/1000 # to kW
+        dataset['pv_ev'] = dataset['pv_ev']/1000 # to kW
+        dataset['grid_ev'] = dataset['grid_ev']/1000 # to kW
+        dataset['ev_grid'] = -dataset['ev_grid']/1000 # to kW
+        dataset['ev_load'] = -dataset['ev_load']/1000 # to kW
+        dataset['soc'] = dataset['soc']*100 # to %
+        time = dataset.index
+        # plot
+        
+    
+        x = range(0,len(dataset))
+    
+        
+        if k == 0:
+            #plt.xlabel('Hours')
+            axes[0].set_ylabel('Power [kW]', color='black')
+            
+            axes[0].set_ylim([0,max(dataset['pv_real'].max(),dataset['load'].max())+3])
+            #plt.xticks(np.arange(min(x), max(x)+1, step=4))
+            ticks = np.arange(0, max(x)+1, step=int(len(dataset)/6))
+            print(len(ticks))
+            labels = [str(time[ticks[i]].hour) + ':00' for i in range(len(ticks))]
+            print(labels)
+            plt.xticks(ticks = ticks, labels = labels)
+            
+            
+            # episodes annotation
+            ypos = math.floor(axes[0].get_ylim()[1])-0.5
+            td = [i for i in range(1, len(dataset)) if dataset.avail[i-1] > dataset.avail[i]]
+            ta = [0]
+            ta.extend([i for i in range(1, len(dataset)) if dataset.avail[i-1] < dataset.avail[i]])
+            
+            #episodes = np.unique(dataset.episode)
+            for i in range(len(td)):
+                x1 = ta[i]
+                x2 = td[i]
+            
+                axes[0].annotate(s='', xy=(x1,ypos), xytext=(x2,ypos), arrowprops=dict(arrowstyle='<->',color='black'))
+                axes[0].annotate(s='Episode '+str(int(episodes[i])),xy=(((x1+x2)/2), ypos+0.2), fontsize=12.0, ha='center')
+            
+            
+            # top subplot
+            axes[0].fill_between(x, dataset['load'], color=palette[3], alpha=0.3, label='Building load')
+            axes[0].plot(x, dataset['load'], color=palette[3])
+            
+            axes[0].fill_between(x, dataset['pv_real'], color=palette[2], alpha=0.3, label='PV production')
+            axes[0].plot(x, dataset['pv_real'], color=palette[2])
+        
+        ax2 = axes[k+1].twinx() # ax for plotting EV SOC evolution
+        ax2.set_ylabel('EV state of charge [%]', color='black')
+        
+    #    ax1.grid(False)
+        ax2.grid(False)
+        axes[k+1].set_ylabel('Power [kW]', color='black')
+        axes[k+1].set_title(m)
+        # bottom subplot
+        ax2.plot(x, dataset['soc'], color=palette[7], marker='.', label='EV state of charge')
+        axes[k+1].bar(x, dataset['pv_ev'], color=palette[8], edgecolor=palette[8], label='PV supplied to EV')
+        axes[k+1].bar(x, dataset['grid_ev'], color=palette[4], edgecolor=palette[4], label='Grid supplied to EV')
+        ax2.set_ylim([-100,110])
+        ticks = np.arange(0,110,25)
+        ax2.set_yticks(ticks)
+    
+        ax2.set_yticklabels([str(t) for t in ticks])
+        
+        axes[k+1].bar(x, dataset['ev_grid'], color=palette[6], edgecolor=palette[6], label='EV supplied to Grid')
+        axes[k+1].bar(x, dataset['ev_load'], color=palette[5], edgecolor=palette[5], label='EV supplied to Load')
+        axes[k+1].set_ylim([-3.7,5])
+        if k == 0:
+        # plot legend
+            handles_1, labels_1 = axes[0].get_legend_handles_labels()
+            handles_2, labels_2 = [(a + b) for a, b in zip(axes[1].get_legend_handles_labels(),
+                                                    ax2.get_legend_handles_labels())]
+            fig.legend(handles_1, labels_1, loc='upper center',facecolor='white', ncol = 2)
+            fig.legend(handles_2, labels_2, loc='lower center', facecolor='white', ncol = 3)
+    
+    if figname:
+        fig.savefig(img_path + figname )
+        plt.close(fig)
 def plot_dropout_results(data_full,pred_variable, predictions, 
                          predictions_dropout, n_hour_future,
                          plot_histogram = False, plot_kde = False, cumulative = True,

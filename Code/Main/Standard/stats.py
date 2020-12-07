@@ -18,13 +18,13 @@ color_codes = {'naive':palette[1],
                'ddpg':palette[3],
                'pdqn':palette[4]}
 
-folder_path = 'C:/Users/Yann/Documents/EPFL/pdm_git/pdm_git/Code/Main/Standard/'
+folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/Standard/Results/'
 #%%
 def quick_stats(decisions):
     data = decisions.copy()
     
     df = data.groupby('episode').sum()
-    
+
     df.drop(['soc'], axis = 1, inplace = True)
     
     soc_arr = [data.soc[0]*100]
@@ -46,6 +46,18 @@ def quick_stats(decisions):
     df['self_cons'] = self_cons
     
     df['grid_bought'] = grid_bought
+    
+    thresholds = data.groupby('episode').quantile([0.9])['grid_load'].values
+    
+    power_bought_95 = []
+    
+    for i, e in enumerate(np.unique(data.episode)):
+        
+        data_episode = data[data.episode == e]
+        
+        power_bought_95.append(sum(data_episode[data_episode['grid_load'] <= thresholds[i]].sum(), data_episode['grid_ev'].sum())/1000)
+    
+    df['Energy_bought'] = power_bought_95
     
     df['p_ev'] = grid_bought
     
@@ -75,7 +87,7 @@ algorithms = {'opti': 'Fully deterministic', 'mpc_d': 'MPC deterministic',
 
 stats = {n: quick_stats(decisions[n][decisions[n].episode < 55]) for n in names}
 
-metrics = ['self_cons', 'soc_dep', 'grid_bought']
+metrics = ['self_cons', 'soc_dep', 'Energy_bought']
 
 stats_df = {m: pd.DataFrame(data = {algorithms[n]: list(stats[n].loc[:,m] )
                              for n in names}) for m in metrics}
@@ -94,7 +106,7 @@ soc = []
 self_cons = []
 
 
-titles = ['PV self-consumption', 'SOC at departure', 'Power bought']
+titles = ['PV self-consumption', 'SOC at departure', 'Max Power bought']
 for n in list(stats.keys()):
     if n == benchmark:
         continue
@@ -123,10 +135,11 @@ plt.xlabel('Episode', fontsize = 22)
     
     
 #%% Box plot self, soc, cons
+import matplotlib.patches as mpatches
 fig, axes = plt.subplots(len(methods),1, sharex = True, figsize=(20,13))
 
 
-metric = ['self_cons', 'soc_dep', 'grid_bought']
+metric = ['self_cons', 'soc_dep', 'Energy_bought']
 for i, m in enumerate(metric):
     
     s_df = stats_df[m]
@@ -140,10 +153,12 @@ axes[0].set_title('PV self-consumption', fontsize = 20)
 axes[0].set_ylabel('%', fontsize = 20)
 axes[1].set_title('SOC at departure', fontsize = 22)
 axes[1].set_ylabel('%', fontsize = 20)
-axes[2].set_title('Power bought', fontsize = 22)
-axes[2].set_ylabel('kW', fontsize = 20)
+axes[2].set_title('Energy bought 90%', fontsize = 22)
+axes[2].set_ylabel('kWh', fontsize = 20)
 for i in range(3):
     axes[i].grid()
+    
+
 plt.show()
 
 #%% Hist Grid ev

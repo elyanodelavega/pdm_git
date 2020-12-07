@@ -59,14 +59,14 @@ for m in methods:
 #%%
 from plot_res import plot_results_deterministic
 
-for ep in range(1,50):
+for ep in range(1,3):
     plot_results_deterministic(decisions[methods[0]], [ep], figname ='Episode_'+str(ep), 
                                img_path = img_paths[methods[0]])
 #%%
 from to_video import to_video
 from plot_res import plot_MPC_det 
 
-for ep in range(1,50):
+for ep in range(1,5):
     
     folder = img_paths[methods[1]]+'Episode '+str(ep)+'/'
     os.mkdir(folder)
@@ -81,19 +81,19 @@ for ep in range(1,50):
     pv_pred = predictions_pv[methods[1]][ep]
     
     
-    for t in df_dec.index[:-1]:
+    for i,t in enumerate(df_dec.index[:-1]):
         
         res = df_res[t]
         load = load_pred[t]
         pv = pv_pred[t]
         
-        plot_MPC_det(df_dec,t,res,pv,load,str(t.hour),folder)
+        plot_MPC_det(df_dec,t,res,pv,load,str(i),folder)
 
     to_video(folder)
 
 from plot_res import plot_MPC_sto 
 
-for ep in range(1,50):
+for ep in range(1,5):
     
     folder = img_paths[methods[2]]+'Episode '+str(ep)+'/'
     os.mkdir(folder)
@@ -110,13 +110,13 @@ for ep in range(1,50):
     
     pv_pred = predictions_pv[methods[2]][ep]
     
-    for t in df_dec.index[:-1]:
+    for i,t in enumerate(df_dec.index[:-1]):
         
         res = df_res[t]
         load = load_pred[t]
         pv = pv_pred[t]
         soc = soc_pred[t]
         
-        plot_MPC_sto(df_dec,t,res,pv,load,soc,str(t.hour),folder)
+        plot_MPC_sto(df_dec,t,res,pv,load,soc,str(i),folder)
         
     to_video(folder)
