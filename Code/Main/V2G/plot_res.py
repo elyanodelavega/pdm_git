@@ -479,7 +479,7 @@ def plot_results_deterministic(decisions, episodes, figname = None, img_path = N
         
 def plot_results_comparison(decisions, episodes, figname = None, img_path = None):
     
-    fig, axes = plt.subplots(len(decisions)+1,1, sharex=True, figsize=(16,11))
+    fig, axes = plt.subplots(len(decisions)+1,1, sharex=True, figsize=(20,13))
     for k,m in enumerate(decisions.keys()):
         df = decisions[m]
         dataset = df[df.episode.isin(episodes)]
@@ -506,9 +506,9 @@ def plot_results_comparison(decisions, episodes, figname = None, img_path = None
             axes[0].set_ylim([0,max(dataset['pv_real'].max(),dataset['load'].max())+3])
             #plt.xticks(np.arange(min(x), max(x)+1, step=4))
             ticks = np.arange(0, max(x)+1, step=int(len(dataset)/6))
-            print(len(ticks))
+
             labels = [str(time[ticks[i]].hour) + ':00' for i in range(len(ticks))]
-            print(labels)
+
             plt.xticks(ticks = ticks, labels = labels)
             
             
@@ -535,7 +535,7 @@ def plot_results_comparison(decisions, episodes, figname = None, img_path = None
             axes[0].plot(x, dataset['pv_real'], color=palette[2])
         
         ax2 = axes[k+1].twinx() # ax for plotting EV SOC evolution
-        ax2.set_ylabel('EV state of charge [%]', color='black')
+        ax2.set_ylabel('SOC [%]', color='black')
         
     #    ax1.grid(False)
         ax2.grid(False)
@@ -546,7 +546,7 @@ def plot_results_comparison(decisions, episodes, figname = None, img_path = None
         axes[k+1].bar(x, dataset['pv_ev'], color=palette[8], edgecolor=palette[8], label='PV supplied to EV')
         axes[k+1].bar(x, dataset['grid_ev'], color=palette[4], edgecolor=palette[4], label='Grid supplied to EV')
         ax2.set_ylim([-100,110])
-        ticks = np.arange(0,110,25)
+        ticks = np.arange(0,110,50)
         ax2.set_yticks(ticks)
     
         ax2.set_yticklabels([str(t) for t in ticks])
@@ -559,7 +559,7 @@ def plot_results_comparison(decisions, episodes, figname = None, img_path = None
             handles_1, labels_1 = axes[0].get_legend_handles_labels()
             handles_2, labels_2 = [(a + b) for a, b in zip(axes[1].get_legend_handles_labels(),
                                                     ax2.get_legend_handles_labels())]
-            fig.legend(handles_1, labels_1, loc='upper center',facecolor='white', ncol = 2)
+            axes[0].legend(handles_1, labels_1, loc='upper center',facecolor='white',bbox_to_anchor=(0.5,1.8), ncol = 2)
             fig.legend(handles_2, labels_2, loc='lower center', facecolor='white', ncol = 3)
     
     if figname:

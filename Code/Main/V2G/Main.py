@@ -63,7 +63,7 @@ warnings.filterwarnings("ignore")
 #%% Optimization
     
 from Model_Class import EV, House, Model
-from MPC import run_MPC
+from MPC import run_MPC, run_MPC_save
 
 import time
 
@@ -75,30 +75,44 @@ columns = ['pv', 'load', 'pv_ev', 'pv_load','pv_grid', 'grid_ev', 'grid_load','e
 
 V2X = 1
 semi_dynamic_pricing = True
+save_mode = False
 
 if semi_dynamic_pricing:
     spot_prices = prices_romande_energie(spot_prices)
     
-EV1 = EV(eta_EV_ch = 0.9)
+EV1 = EV(eta_EV_ch = 0.95)
 House1 = House()
 
 
 episode_start = 1
-n_episodes = 20
+n_episodes = 30
 
 
 range_episodes = range(episode_start, episode_start + n_episodes)
 
+names = ['v2g_opti', 'v2g_mpc_d', 'v2g_mpc_s', 'v2g_mpc_s_cvar','v2g_mpc_s_cvar_cost', 'v2g_mpc_s_cvar_soc']
+
+
 methods = ['1. Fully deterministic',  '4. MPC deterministic', 
-           '5. MPC stochastic', '6. MPC stochastic CVaR']
+           '5. MPC stochastic', '6. MPC stochastic CVaR',
+           '7. MPC stochastic CVaR cost', '8. MPC stochastic CVaR soc']
+
+algorithms = {methods[i]:names[i]  for i in range(len(names))}
+
 MPC_methods = ['4. MPC deterministic', 
-           '5. MPC stochastic', '6. MPC stochastic CVaR']
+               '5. MPC stochastic', '6. MPC stochastic CVaR',
+               '7. MPC stochastic CVaR cost', '8. MPC stochastic CVaR soc']
 
 MPC_opti_methods = {'4. MPC deterministic': 'deterministic', '5. MPC stochastic': 'expected value',
-                  '6. MPC stochastic CVaR': 'CVaR'}
+                  '6. MPC stochastic CVaR': 'CVaR','7. MPC stochastic CVaR cost': 'Markowitz', 
+                  '8. MPC stochastic CVaR soc': 'Markowitz' }
 
 MPC_parameters = {'4. MPC deterministic': None, '5. MPC stochastic': None,
-                  '6. MPC stochastic CVaR': {'alpha': 0.75}}
+                  '6. MPC stochastic CVaR': {'alpha': 0.75},
+                  '7. MPC stochastic CVaR cost':{'alpha_cost': 0.75,
+                                                 'alpha_soc': 0},
+                  '8. MPC stochastic CVaR soc':{'alpha_cost': 0,
+                                                 'alpha_soc': 0.75}}
 
 results = {m: pd.DataFrame(index = data_EV.index, columns = columns) for m in methods}
 
@@ -156,24 +170,31 @@ for e in range_episodes:
         opti_method = MPC_opti_methods[m]
         opti_parameters = MPC_parameters[m]
         
-        results[m], MPC_results[m][e], predictions_load[m][e], predictions_PV[m][e], time_algo[m][e] = run_MPC(m, episode, model, decisions_0,results[m],
-                                                                                                    Load_model_forecast, PV_model_forecast, PV_LSTM,
+        if save_mode:
+            results[m], MPC_results[m][e], predictions_load[m][e], predictions_PV[m][e], time_algo[m][e] = run_MPC_save(m, episode, model, decisions_0,results[m],
+                                                                                                                        Load_model_forecast, PV_model_forecast, PV_LSTM,
+                                                                                                                        opti_method, opti_parameters,
+                                                                                                                        n_hour_future)
+                                                                                             
+        else:
+            results[m] = run_MPC(m, episode, model, decisions_0,results[m],Load_model_forecast, PV_model_forecast, PV_LSTM,
                                                                                                     opti_method, opti_parameters,
                                                                                                     n_hour_future)
-
+                                                                                                    
     model_number += 1
 
 #%%
 import pickle
 res_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/'
-names = ['v2g_opti', 'v2g_mpc_d', 'v2g_mpc_s', 'v2g_mpc_s_cvar']
+
 for i,m in enumerate(methods):
     res = results[m].dropna()
+    res = res[res.episode < e]
     res.to_csv(res_folder_path+f'results_{names[i]}_{n_episodes}.csv')
     file_res = open(res_folder_path+f'results_{names[i]}_{n_episodes}.pickle', 'wb') 
     pickle.dump(res, file_res)
     
-    if i != 0:
+    if i != 0 and save:
         pred_load = predictions_load[m]
         file_pred_load = open(res_folder_path+f'load_pred_{names[i]}_{n_episodes}.pickle', 'wb') 
         pickle.dump(pred_load, file_pred_load)

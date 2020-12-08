@@ -318,12 +318,12 @@ class Model:
         cost_decision = self.P_grid_bought_1* self.buy_spot_price[self.t_decision] - self.P_grid_sold_1* self.sell_spot_price[self.t_decision]
         cost_forecast = np.sum([(self.P_grid_bought[t,i] * self.buy_spot_price[t] - self.P_grid_sold[t,i] * self.sell_spot_price[t]) for t in self.time_horizon for i in self.range_samples])  
         
-        PV_consumed_decision = self.P_PV_2EV_1 + self.P_PV_2L_1
-        PV_consumed_forecast = (gp.quicksum(self.P_PV_2EV) + gp.quicksum(self.P_PV_2L))/self.n_samples
+        # PV_consumed_decision = self.P_PV_2EV_1 + self.P_PV_2L_1
+        # PV_consumed_forecast = (gp.quicksum(self.P_PV_2EV) + gp.quicksum(self.P_PV_2L))/self.n_samples
         
         SOC_difference =  gp.quicksum([self.SOC_min_departure - self.SOC[self.t_end,i] for i in self.range_samples])
         penalty = self.buy_spot_price[self.t_departure]
-        Power_difference = SOC_difference*self.BC_EV
+        Power_difference = penalty * SOC_difference*self.BC_EV
         
         lambda_cost = 1 - lambda_soc
         
@@ -339,12 +339,12 @@ class Model:
             alpha_cost = parameters['alpha_cost']
             alpha_soc = parameters['alpha_soc']
             
-            objective = cost_decision + lambda_cost * cost_forecast/((1-alpha_cost)*self.n_samples) + lambda_soc* Power_difference/((1-alpha_soc)*self.n_samples)
+            objective = lambda_cost *(cost_decision +  cost_forecast/((1-alpha_cost)*self.n_samples)) + lambda_soc* Power_difference/((1-alpha_soc)*self.n_samples)
 
         
         self.m.setObjective(objective)
 
-        self.m.write('model_1.lp')
+        # self.m.write('model_1.lp')
         self.m.params.TimeLimit=60
         self.m.optimize()
                 
