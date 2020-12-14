@@ -296,7 +296,8 @@ class Model:
         
         
         
-    def optimize(self, t_decision, t_end, predictions_PV, predictions_load, forecasting = True, method = 'deterministic', parameters = None, lambda_soc = 0.5):
+    def optimize(self, t_decision, t_end, predictions_PV, predictions_load, forecasting = True, objective_1 = 'cost', objective_2 = 'soc',
+                 method = 'deterministic', parameters = None, lambda_1 = 0.5, soc_penalty = 1.5):
         
         if predictions_PV.shape[1] == 1:
             self.stochastic = False
@@ -304,6 +305,7 @@ class Model:
         else:
             self.stochastic = True
             self.m = gp.Model()
+        
         
         self.forecasting = forecasting
         self.prepare_data(t_decision,t_end, predictions_PV, predictions_load)
@@ -318,17 +320,34 @@ class Model:
         cost_decision = self.P_grid_bought_1* self.buy_spot_price[self.t_decision] - self.P_grid_sold_1* self.sell_spot_price[self.t_decision]
         cost_forecast = np.sum([(self.P_grid_bought[t,i] * self.buy_spot_price[t] - self.P_grid_sold[t,i] * self.sell_spot_price[t]) for t in self.time_horizon for i in self.range_samples])  
         
-        # PV_consumed_decision = self.P_PV_2EV_1 + self.P_PV_2L_1
-        # PV_consumed_forecast = (gp.quicksum(self.P_PV_2EV) + gp.quicksum(self.P_PV_2L))/self.n_samples
+        PV_consumed_decision = self.P_PV_2EV_1 + self.P_PV_2L_1
+        
+        if self.realization_PV > 0:
+            PV_self_td = PV_consumed_decision/self.realization_PV
+        else:
+            PV_self_td = 0
+            
+        PV_consumed_forecast = np.sum([(self.P_PV_2EV[t,i] + self.P_PV_2L[t,i]) for t in self.time_horizon for i in self.range_samples])
+        PV_total_forecast = self.predictions_PV.sum().sum()
         
         SOC_difference =  gp.quicksum([self.SOC_min_departure - self.SOC[self.t_end,i] for i in self.range_samples])
-        penalty = self.buy_spot_price[self.t_departure]
-        Power_difference = penalty * SOC_difference*self.BC_EV
         
-        lambda_cost = 1 - lambda_soc
+        if 'pv' not in [objective_1, objective_2]:
+            penalty = soc_penalty * self.buy_spot_price[self.t_departure]*self.BC_EV
+        else:
+            penalty = 1
+            
+            
+        Power_difference = penalty * SOC_difference
+        
+        lambda_2 = 1 - lambda_1
+        
+        objective = {}
         
         if  method == 'deterministic' or method == 'day_ahead' or method == 'expected value':
-            objective = cost_decision + cost_forecast/self.n_samples + Power_difference/self.n_samples
+            objective['cost'] = cost_decision + cost_forecast/self.n_samples 
+            objective['soc'] = Power_difference/self.n_samples
+            objective['pv'] = -(PV_self_td + (PV_consumed_forecast/PV_total_forecast)/self.n_samples)
             #self.PV_consumed = self.PV_consumed_decision + self.PV_consumed_forecast/self.n_samples
             
         elif method == 'CVaR':
@@ -339,13 +358,18 @@ class Model:
             alpha_cost = parameters['alpha_cost']
             alpha_soc = parameters['alpha_soc']
             
-            objective = lambda_cost *(cost_decision +  cost_forecast/((1-alpha_cost)*self.n_samples)) + lambda_soc* Power_difference/((1-alpha_soc)*self.n_samples)
-
-        
-        self.m.setObjective(objective)
+            objective['cost'] = (cost_decision +  cost_forecast/((1-alpha_cost)*self.n_samples)) 
+            objective['soc'] =  Power_difference/((1-alpha_soc)*self.n_samples)
+            objective['pv'] =  -(PV_self_td + (PV_consumed_forecast/PV_total_forecast)/((1-alpha_cost)*self.n_samples))
+            
+        self.m.setObjective(objective[objective_1] + objective[objective_2])
 
         # self.m.write('model_1.lp')
-        self.m.params.TimeLimit=60
+        self.m.Params.OutputFlag = 0
+        self.m.Params.TimeLimit=60
+
+        if 'pv' in [objective_1, objective_2]:
+            self.m.Params.MIPGap = 1e-2
         self.m.optimize()
                 
 

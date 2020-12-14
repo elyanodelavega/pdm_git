@@ -393,7 +393,7 @@ def plot_results_day_ahead(df,predictions = None, figname = None, img_path = Non
 
 
     
-def plot_results_deterministic(decisions, episodes, figname = None, img_path = None):
+def plot_results_deterministic(decisions, episodes,method, figname = None, img_path = None):
     
     dataset = decisions[decisions.episode.isin(episodes)]
     
@@ -412,7 +412,7 @@ def plot_results_deterministic(decisions, episodes, figname = None, img_path = N
 
     x = range(0,len(dataset))
 
-    
+    axes[1].set_title(method)
     #plt.xlabel('Hours')
     axes[0].set_ylabel('Power [kW]', color='black')
     axes[1].set_ylabel('Power [kW]', color='black')
