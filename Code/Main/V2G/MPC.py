@@ -83,7 +83,7 @@ def run_MPC_save(method_name, episode, model, decisions_0,
 def run_MPC(method_name, episode, model, decisions_0,
             Load_model_forecast, PV_model_forecast, PV_LSTM,
             opti_method, opti_parameters,objective_1,
-            n_hour_future, t_left, soc_penalty):
+            n_hour_future, t_left, soc_penalty, lambda_soc = 0.5):
     #MPC stochastic Expected
 
     episode_length = len(episode)
@@ -118,7 +118,8 @@ def run_MPC(method_name, episode, model, decisions_0,
             PV_predictions = PV_model_forecast.predict(model = PV_LSTM, time = t_forecast, dataframe = True)
             
         model.optimize(t_decision, t_end, PV_predictions, Load_predictions, forecasting = True, 
-                       method = opti_method, parameters = opti_parameters,objective_1 = objective_1, soc_penalty = soc_penalty)
+                       method = opti_method, parameters = opti_parameters,objective_1 = objective_1, 
+                       soc_penalty = soc_penalty, lambda_soc = lambda_soc)
         
 
     

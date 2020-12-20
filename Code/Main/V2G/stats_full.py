@@ -1,4 +1,143 @@
-# -*- coding: utf-8 -*-
+# # -*- coding: utf-8 -*-
+# """
+# Created on Thu Nov 26 11:36:53 2020
+
+# @author: Yann
+# """
+# import matplotlib.pyplot as plt
+# import matplotlib.patches as mpatches
+# import pandas as pd
+# import seaborn as sns
+# import numpy as np
+# import math
+
+# palette = sns.color_palette()
+# color_codes = {'v2g_opti':palette[0],
+#                 'v2g_mpc_d':palette[1],
+#                 'v2g_mpc_s':palette[2],
+#                 'v2g_mpc_s_cvar_cost':palette[4],
+#                 'v2g_mpc_s_cvar_soc':palette[5],
+#                 'v2g_opti_no_pen':palette[3],
+#                 'v2g_mpc_d_no_pen':palette[6],
+#                 'v2g_mpc_s_no_pen':palette[7],
+#                 'v2g_mpc_s_cvar_cost_no_pen':palette[8],
+#                 'v2g_mpc_s_cvar_soc_no_pen':palette[9],
+#                 'v2g_opti_pv':palette[3],
+#                 'v2g_mpc_d_pv':palette[6],
+#                 'v2g_mpc_s_pv':palette[7],
+#                 'v2g_mpc_s_cvar_soc_pv':palette[9]}
+
+# # color_codes = {'opti':palette[0],
+# #                'mpc_d':palette[1],
+# #                'mpc_s':palette[2],
+# #                'mpc_s_cvar_cost':palette[4],
+# #                'mpc_s_cvar_soc':palette[5]}
+# #                # 'opti_1_5':palette[3],
+# #                # 'mpc_d_1_5':palette[6],
+# #                # 'mpc_s_1_5':palette[7],
+# #                # 'mpc_s_cvar_cost_1_5':palette[8],
+# #                # 'mpc_s_cvar_soc_1_5':palette[9]}
+
+
+# folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/cost_soc/'
+
+# from df_prepare import data_PV_csv, data_EV_csv, data_spot_market_csv, prices_romande_energie
+
+
+# #%%
+# def quick_stats(decisions, spot_prices):
+    
+#     data = decisions.copy()
+    
+#     data = prices_romande_energie(data)
+
+#     data['cost_buy'] = (data['grid_load'] + data['grid_ev'])*data['buy']
+    
+#     data['cost_sell'] = (data['pv_grid'] + data['ev_grid'])*data['buy']
+    
+#     data['cost'] = data['cost_buy'] - data['cost_sell']
+#     d = data.copy()
+    
+#     df = d.groupby('episode').sum()
+
+#     df.drop(['soc'], axis = 1, inplace = True)
+    
+#     soc_arr = [data.soc[0]*100]
+    
+#     soc_arr.extend([data.soc[i]*100 for i in range(1, len(data)) if data.avail[i] > data.avail[i-1]])
+    
+#     soc_dep = [data.soc[i] *100 for i in range(1, len(data)) if data.avail[i] < data.avail[i-1]]
+    
+#     grid_bought = (df['grid_load'] + df['grid_ev'])/1000
+    
+#     p_ev = (df['pv_ev'] + df['grid_ev'])/1000
+    
+#     self_cons = 100*(df['pv_load'] + df['pv_ev'])/df['pv']
+    
+#     pv_load_perc = 100*df['pv_load'] /df['pv']
+    
+#     pv_ev_perc = 100*df['pv_ev'] /df['pv']
+                      
+#     pv_grid_perc = 100*df['pv_grid'] /df['pv']
+    
+#     df['soc_arr'] = soc_arr 
+    
+#     df['soc_dep'] = soc_dep
+    
+#     df['self_cons'] = self_cons
+    
+#     d = data.copy()
+#     df_med = d.groupby('episode').median()
+#     df['Loss'] = df_med['cost']
+    
+#     df['p_ev'] = p_ev
+    
+    
+    
+#     return df
+
+# #%%
+
+# methods = ['Fully deterministic',  'MPC deterministic', 
+#            'MPC stochastic', 
+#            'MPC stochastic \nExp: SOC, \nCVaR 75%: Cost',
+#            'MPC stochastic \nExp: Cost, \nCVaR 75%: SOC',
+#             'Fully deterministic \nSOC No penalty',  
+#             'MPC deterministic \nSOC No penalty', 
+#             'MPC stochastic \nSOC No penalty', 
+#             'MPC stochastic \nExp: SOC, \nCVaR 75%: Cost \nSOC No penalty',
+#             'MPC stochastic \nExp: Cost, \nCVaR 75%: SOC \nSOC No penalty',
+#             'Fully deterministic \n PV',
+#             'MPC deterministic \n PV', 
+#             'MPC stochastic \n PV', 
+#             'MPC stochastic \nExp: PV, \nCVaR 75%: SOC ']
+
+# names = list(color_codes.keys())
+
+# csv_code = '.csv'
+# decisions = {n: pd.read_csv(folder_path+'results_'+n+csv_code, index_col = 0) for n in names}
+
+# for n in names:
+#     df = decisions[n][decisions[n].episode < 26]
+#     new_index = pd.to_datetime(df.index, dayfirst = True)
+#     df.index = new_index
+#     decisions[n] = df
+
+# algorithms = {names[i]: methods[i] for i in range(len(names))}
+
+
+# stats = {n: quick_stats(decisions[n],prices_romande_energie) for n in names}
+
+# metrics = ['self_cons', 'soc_dep', 'Loss']
+
+# stats_df = {m: pd.DataFrame(data = {n: list(stats[n].loc[:,m] )
+#                              for n in names}) for m in metrics}
+
+# benchmark = 'v2g_opti'
+# n_episodes = len(stats[benchmark])
+
+# range_episodes = range(int(stats[benchmark].index[0]), int(stats[benchmark].index[-1] + 1))
+
 """
 Created on Thu Nov 26 11:36:53 2020
 
@@ -12,34 +151,38 @@ import numpy as np
 import math
 
 palette = sns.color_palette()
-color_codes = {'v2g_opti':palette[0],
-                'v2g_mpc_d':palette[1],
-                'v2g_mpc_s':palette[2],
-                'v2g_mpc_s_cvar_cost':palette[4],
-                'v2g_mpc_s_cvar_soc':palette[5],
-                'v2g_opti_no_pen':palette[3],
-                'v2g_mpc_d_no_pen':palette[6],
-                'v2g_mpc_s_no_pen':palette[7],
-                'v2g_mpc_s_cvar_cost_no_pen':palette[8],
-                'v2g_mpc_s_cvar_soc_no_pen':palette[9],
-                'v2g_opti_pv':palette[3],
-                'v2g_mpc_d_pv':palette[6],
-                'v2g_mpc_s_pv':palette[7],
-                'v2g_mpc_s_cvar_soc_pv':palette[9]}
-
-# color_codes = {'opti':palette[0],
-#                'mpc_d':palette[1],
-#                'mpc_s':palette[2],
-#                'mpc_s_cvar_cost':palette[4],
-#                'mpc_s_cvar_soc':palette[5]}
-#                # 'opti_1_5':palette[3],
-#                # 'mpc_d_1_5':palette[6],
-#                # 'mpc_s_1_5':palette[7],
-#                # 'mpc_s_cvar_cost_1_5':palette[8],
-#                # 'mpc_s_cvar_soc_1_5':palette[9]}
+# color_codes = {'v2g_opti':palette[0],
+#                 'v2g_mpc_d':palette[1],
+#                 'v2g_mpc_s':palette[2],
+#                 'v2g_mpc_s_cvar_cost':palette[4],
+#                 'v2g_mpc_s_cvar_soc':palette[5],
+#                 'v2g_opti_no_pen':palette[3],
+#                 'v2g_mpc_d_no_pen':palette[6],
+#                 'v2g_mpc_s_no_pen':palette[7],
+#                 'v2g_mpc_s_cvar_cost_no_pen':palette[8],
+#                 'v2g_mpc_s_cvar_soc_no_pen':palette[9],
+#                 'v2g_opti_pv':palette[3],
+#                 'v2g_mpc_d_pv':palette[6],
+#                 'v2g_mpc_s_pv':palette[7],
+#                 'v2g_mpc_s_cvar_soc_pv':palette[9]}
 
 
-folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/cost_soc/'
+
+color_codes = {'v2g_opti_cost':palette[0],
+                'v2g_mpc_d_cost':palette[1],
+                'v2g_mpc_s_cost':palette[2],
+                'v2g_mpc_s_cvar_soc_cost':palette[3],
+
+                'v2g_opti_peak': palette[5],
+                'v2g_mpc_d_peak': palette[6],
+                'v2g_opti_pv':palette[7],
+                'v2g_mpc_d_pv':palette[8],
+                'v2g_mpc_s_pv':palette[9],
+                'v2g_mpc_s_cvar_soc_pv':palette[4]}
+
+
+folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/Full/'
+
 
 from df_prepare import data_PV_csv, data_EV_csv, data_spot_market_csv, prices_romande_energie
 
@@ -56,9 +199,20 @@ def quick_stats(decisions, spot_prices):
     data['cost_sell'] = (data['pv_grid'] + data['ev_grid'])*data['buy']
     
     data['cost'] = data['cost_buy'] - data['cost_sell']
+    
+    data['grid_bought'] = (data['grid_load'] + data['grid_ev'])/1000
+    
+    data['grid_bought'] = (data['grid_load'] + data['grid_ev'])/1000
+    
     d = data.copy()
     
     df = d.groupby('episode').sum()
+    
+    df_mean = data.groupby('episode').mean()
+    
+    df_max = data.groupby('episode').max()
+    
+    df_med = d.groupby('episode').median()
 
     df.drop(['soc'], axis = 1, inplace = True)
     
@@ -67,8 +221,6 @@ def quick_stats(decisions, spot_prices):
     soc_arr.extend([data.soc[i]*100 for i in range(1, len(data)) if data.avail[i] > data.avail[i-1]])
     
     soc_dep = [data.soc[i] *100 for i in range(1, len(data)) if data.avail[i] < data.avail[i-1]]
-    
-    grid_bought = (df['grid_load'] + df['grid_ev'])/1000
     
     p_ev = (df['pv_ev'] + df['grid_ev'])/1000
     
@@ -85,32 +237,64 @@ def quick_stats(decisions, spot_prices):
     df['soc_dep'] = soc_dep
     
     df['self_cons'] = self_cons
-    
-    d = data.copy()
-    df_med = d.groupby('episode').median()
+
     df['Loss'] = df_med['cost']
     
     df['p_ev'] = p_ev
     
+    df['pv_load_perc'] = pv_load_perc
     
+    df['pv_ev_perc'] = pv_ev_perc
+    
+    df['pv_grid_perc'] = pv_grid_perc
+    
+    df['peak_factor'] = 100*df_mean.grid_bought / df_max.grid_bought
     
     return df
 
+def loss_ratio(stats_loss, quantile_low = 0.1, quantile_high = 0.9):
+    
+    df = stats_loss.copy()
+    df_med = df.median()
+    
+    best_algo = df_med[df_med == df_med.min()].index.values[0]
+    print(best_algo)
+    new_df = pd.DataFrame(columns = df.columns)
+    for col in new_df.columns:
+        values = 100*df[best_algo]/df[col]
+        new_df[col] = values
+        
+    low = new_df.quantile(quantile_low)
+    med = new_df.median()
+    high = new_df.quantile(quantile_high)
+    return low,med,high
+    
 #%%
 
-methods = ['Fully deterministic',  'MPC deterministic', 
-           'MPC stochastic', 
-           'MPC stochastic \nExp: SOC, \nCVaR 75%: Cost',
+# methods = ['Fully deterministic ',  'MPC deterministic', 
+#            'MPC stochastic', 
+#            'MPC stochastic \nExp: SOC, \nCVaR 75%: Cost',
+#            'MPC stochastic \nExp: Cost, \nCVaR 75%: SOC',
+#             'Fully deterministic \nSOC No penalty',  
+#             'MPC deterministic \nSOC No penalty', 
+#             'MPC stochastic \nSOC No penalty', 
+#             'MPC stochastic \nExp: SOC, \nCVaR 75%: Cost \nSOC No penalty',
+#             'MPC stochastic \nExp: Cost, \nCVaR 75%: SOC \nSOC No penalty',
+#             'Fully deterministic \n PV',
+#             'MPC deterministic \n PV', 
+#             'MPC stochastic \n PV', 
+#             'MPC stochastic \nExp: PV, \nCVaR 75%: SOC ']
+
+methods = ['Fully deterministic  \nExp: Cost \nExp: SOC',  'MPC deterministic \nExp: Cost \nExp: SOC', 
+           'MPC stochastic \nExp: Cost \nExp: SOC', 
            'MPC stochastic \nExp: Cost, \nCVaR 75%: SOC',
-            'Fully deterministic \nSOC No penalty',  
-            'MPC deterministic \nSOC No penalty', 
-            'MPC stochastic \nSOC No penalty', 
-            'MPC stochastic \nExp: SOC, \nCVaR 75%: Cost \nSOC No penalty',
-            'MPC stochastic \nExp: Cost, \nCVaR 75%: SOC \nSOC No penalty',
-            'Fully deterministic \n PV',
-            'MPC deterministic \n PV', 
-            'MPC stochastic \n PV', 
+            'Fully deterministic \nExp: Peak Shaving \nExp: SOC',
+            'MPC deterministic \nExp: Peak Shaving \nExp: SOC',
+            'Fully deterministic \nExp: PV \nExp: SOC',
+            'MPC deterministic \nExp: PV \nExp: SOC', 
+            'MPC stochastic \nExp: PV \nExp: SOC', 
             'MPC stochastic \nExp: PV, \nCVaR 75%: SOC ']
+
 
 names = list(color_codes.keys())
 
@@ -118,7 +302,7 @@ csv_code = '.csv'
 decisions = {n: pd.read_csv(folder_path+'results_'+n+csv_code, index_col = 0) for n in names}
 
 for n in names:
-    df = decisions[n][decisions[n].episode < 26]
+    df = decisions[n][decisions[n].episode < 61]
     new_index = pd.to_datetime(df.index, dayfirst = True)
     df.index = new_index
     decisions[n] = df
@@ -128,16 +312,20 @@ algorithms = {names[i]: methods[i] for i in range(len(names))}
 
 stats = {n: quick_stats(decisions[n],prices_romande_energie) for n in names}
 
-metrics = ['self_cons', 'soc_dep', 'Loss']
+metrics = ['self_cons', 'soc_dep', 'Loss', 'peak_factor']
+           # 'pv_load_perc','pv_ev_perc','pv_grid_perc']
 
 stats_df = {m: pd.DataFrame(data = {n: list(stats[n].loc[:,m] )
                              for n in names}) for m in metrics}
 
-benchmark = 'v2g_opti'
+benchmark = 'v2g_opti_cost'
 n_episodes = len(stats[benchmark])
 
 range_episodes = range(int(stats[benchmark].index[0]), int(stats[benchmark].index[-1] + 1))
 
+metrics_title = ['PV self-consumption','SOC at Departure', 'Median Loss', 'Peak factor' ]
+metrics_label = ['%','%', 'CHF','%']
+metrics_props = {metrics[i]: {'title': metrics_title[i],'label': metrics_label[i]} for i in range(len(metrics))}
 
 
 
@@ -352,6 +540,7 @@ fig.legend(handles=patches, loc='lower center',ncol=int(len(names)/2))
 
 
 
+
 #%% Boxplot charges (kW)
 
 fig, axes = plt.subplots(len(names),1, sharex = True, sharey = True, figsize=(20,12))
@@ -531,7 +720,7 @@ for i, n in enumerate(names):
     axes[-1].set_xlabel('Charging time %', fontsize = 16)
     
 patches = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in names]
-fig.legend(handles=patches, loc='lower center',ncol=int(len(names)))
+fig.legend(handles=patches, loc='lower center',ncol=int(len(names)/2))
 
 #%% Boxplot discharge Number
 
@@ -576,7 +765,7 @@ for i, n in enumerate(names):
     
     
 patches = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in names]
-fig.legend(handles=patches, loc='lower center',ncol=int(len(names)))    
+fig.legend(handles=patches, loc='lower center',ncol=int(len(names)/2))    
     
     
 #%%
@@ -626,7 +815,7 @@ for j, n in enumerate(names):
         axes[-1,col].set_xlabel('Charging time %', fontsize = 13)
 
 patches = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in names]
-fig.legend(handles=patches, loc='lower center',ncol=int(len(names)))
+fig.legend(handles=patches, loc='lower center',ncol=int(len(names)/2))
    
 #%%
 import numpy as np
@@ -720,7 +909,7 @@ for i in range(len(bins)-1):
     axes[0,i].set_title(f'Charging time {a_low} - {a_high-1}h', fontsize = 14)  
     
 patches = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in names]
-fig.legend(handles=patches, loc='lower center',ncol=int(len(names)))
+fig.legend(handles=patches, loc='lower center',ncol=int(len(names)/2))
 
 #%% Boxplot EV activity
 
@@ -832,7 +1021,7 @@ for i, n in enumerate(names):
     
     decision['pv_residual'] = (decision['pv'] -decision['pv_load'])/1000
 
-    decision['self_cons'] = 100*(decision['pv_ev']+decision['pv_load'])/1000/(decision['pv'])
+    decision['self_cons'] = 100*(decision['pv_ev']+decision['pv_load'])/(decision['pv'])
     
     # decision['grid_sell'] = -decision['pv_grid']/1000
     

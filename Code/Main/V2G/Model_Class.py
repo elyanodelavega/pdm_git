@@ -167,7 +167,7 @@ class Model:
         self.P_EV2G_1 = self.m.addVar(name = 'ev_grid_1')
         
         
-        self.P_grid_bought_1 = self.m.addVar()
+        self.P_grid_bought_1 = self.m.addVar(name = 'P_bought_1')
         self.P_grid_sold_1 = self.m.addVar()
         self.y_g_buy_1 = self.m.addVar(vtype=GRB.BINARY, name = 'y_buy_1')
         self.y_g_sell_1 = self.m.addVar(vtype=GRB.BINARY, name = 'y_sell_1')
@@ -231,7 +231,7 @@ class Model:
         self.P_EV2L = self.m.addVars(self.time_horizon, self.n_samples, name = 'ev_load')
         self.P_EV2G = self.m.addVars(self.time_horizon, self.n_samples, name = 'ev_grid')
         
-        self.P_grid_bought = self.m.addVars(self.time_horizon, self.n_samples)
+        self.P_grid_bought = self.m.addVars(self.time_horizon, self.n_samples, name = 'P_bought')
         self.P_grid_sold = self.m.addVars(self.time_horizon, self.n_samples)
         self.y_g_buy = self.m.addVars(self.time_horizon, self.n_samples, vtype=GRB.BINARY, name = 'y_buy')
         self.y_g_sell = self.m.addVars(self.time_horizon, self.n_samples, vtype=GRB.BINARY, name = 'y_sell')
@@ -297,7 +297,7 @@ class Model:
         
         
     def optimize(self, t_decision, t_end, predictions_PV, predictions_load, forecasting = True, objective_1 = 'cost', objective_2 = 'soc',
-                 method = 'deterministic', parameters = None, lambda_1 = 0.5, soc_penalty = 1.5):
+                 method = 'deterministic', parameters = None, lambda_soc = 0.5, soc_penalty = 1.5):
         
         if predictions_PV.shape[1] == 1:
             self.stochastic = False
@@ -306,7 +306,8 @@ class Model:
             self.stochastic = True
             self.m = gp.Model()
         
-        
+        self.m.Params.OutputFlag = 0
+        self.m.Params.TimeLimit=60
         self.forecasting = forecasting
         self.prepare_data(t_decision,t_end, predictions_PV, predictions_load)
         self.set_parameters()
@@ -332,15 +333,30 @@ class Model:
         
         SOC_difference =  gp.quicksum([self.SOC_min_departure - self.SOC[self.t_end,i] for i in self.range_samples])
         
-        if 'pv' not in [objective_1, objective_2]:
-            penalty = soc_penalty * self.buy_spot_price[self.t_departure]*self.BC_EV
-        else:
+
+        
+        if 'pv'  in [objective_1, objective_2] :
+            
             penalty = 1
+            self.m.Params.MIPGap = 1e-2
+            
+        elif 'peak' in [objective_1, objective_2]:
+            
+            self.y_cost = self.m.addVars(self.n_samples, name = 'y_cost')
+            self.P_max_var = self.m.addVars(self.n_samples, name = 'P_max_var')
+
+            self.P_max = self.m.addConstrs(self.P_max_var[i] == gp.max_(self.P_grid_bought[t,i] for t in self.time_horizon) for i in self.range_samples)
+            self.peak = self.m.addConstrs((gp.quicksum(self.P_grid_bought[t,i] for t in self.time_horizon))/len(self.time_horizon) + self.y_cost[i] == self.P_max_var[i] for i in self.range_samples)
+            
+            penalty = self.BC_EV
+            self.m.Params.MIPGap = 1e-2
+        else:
+            penalty = soc_penalty * self.buy_spot_price[self.t_departure]*self.BC_EV
             
             
         Power_difference = penalty * SOC_difference
         
-        lambda_2 = 1 - lambda_1
+        lambda_2 = 1 - lambda_soc
         
         objective = {}
         
@@ -348,7 +364,8 @@ class Model:
             objective['cost'] = cost_decision + cost_forecast/self.n_samples 
             objective['soc'] = Power_difference/self.n_samples
             objective['pv'] = -(PV_self_td + (PV_consumed_forecast/PV_total_forecast)/self.n_samples)
-            #self.PV_consumed = self.PV_consumed_decision + self.PV_consumed_forecast/self.n_samples
+            if 'peak' in [objective_1, objective_2]: 
+                objective['peak'] = gp.quicksum(self.y_cost) / self.n_samples
             
         elif method == 'CVaR':
             alpha = parameters['alpha']
@@ -361,15 +378,15 @@ class Model:
             objective['cost'] = (cost_decision +  cost_forecast/((1-alpha_cost)*self.n_samples)) 
             objective['soc'] =  Power_difference/((1-alpha_soc)*self.n_samples)
             objective['pv'] =  -(PV_self_td + (PV_consumed_forecast/PV_total_forecast)/((1-alpha_cost)*self.n_samples))
+            if 'peak' in [objective_1, objective_2]: 
+                objective['peak'] = gp.quicksum(self.y_cost) / ((1-alpha_soc)*self.n_samples)
             
-        self.m.setObjective(objective[objective_1] + objective[objective_2])
+        self.m.setObjective(lambda_2 * objective[objective_1] + lambda_soc* objective[objective_2])
 
         # self.m.write('model_1.lp')
-        self.m.Params.OutputFlag = 0
-        self.m.Params.TimeLimit=60
 
-        if 'pv' in [objective_1, objective_2]:
-            self.m.Params.MIPGap = 1e-2
+
+            
         self.m.optimize()
                 
 
