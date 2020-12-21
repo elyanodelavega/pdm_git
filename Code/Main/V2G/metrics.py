@@ -99,7 +99,7 @@ def quick_stats(decisions, spot_prices):
     
     df['self_cons'] = self_cons
 
-    df['Loss'] = df_med['cost']
+    df['Loss'] = df['cost']
     
     df['p_ev'] = p_ev
     
@@ -147,12 +147,12 @@ def loss_ratio(stats_loss, quantile_low = 0.1, quantile_high = 0.9):
 #             'MPC stochastic \n PV', 
 #             'MPC stochastic \nExp: PV, \nCVaR 75%: SOC ']
 
-methods = ['Fully deterministic  \nExp: Cost \nExp: SOC',  'MPC deterministic \nExp: Cost \nExp: SOC', 
+methods = ['Perfect Foresight  \nExp: Cost \nExp: SOC',  'MPC deterministic \nExp: Cost \nExp: SOC', 
            'MPC stochastic \nExp: Cost \nExp: SOC', 
            'MPC stochastic \nExp: Cost, \nCVaR 75%: SOC',
-            'Fully deterministic \nExp: Peak Shaving \nExp: SOC',
+            'Perfect Foresight \nExp: Peak Shaving \nExp: SOC',
             'MPC deterministic \nExp: Peak Shaving \nExp: SOC',
-            'Fully deterministic \nExp: PV \nExp: SOC',
+            'Perfect Foresight \nExp: PV \nExp: SOC',
             'MPC deterministic \nExp: PV \nExp: SOC', 
             'MPC stochastic \nExp: PV \nExp: SOC', 
             'MPC stochastic \nExp: PV, \nCVaR 75%: SOC ']
@@ -194,7 +194,7 @@ group_code = {'cost': [], 'peak': [], 'pv': [],
           'opti':[], 'mpc_d': [], 'mpc_s': [], 'mpc_s_cvar': []}
 
 group_names = ['Objective: Cost','Objective: Peak Shaving', 'Objective: PV',
-               'Method: Fully Deterministic','Method: MPC deterministic',
+               'Method: Perfect Foresight','Method: MPC deterministic',
                'Method: MPC stochastic, Expected', 'Method: MPC stochastic, CVaR']
 groups = {}
 for n in names:
@@ -391,9 +391,6 @@ labels = {'self_cons': 'PV \nself \nconsumption ',
           'soc_dep': 'SOC \nat departure '}
 
 
-
-
-
 algos = [n for n in names if 'opti' not in n]
 angles=np.linspace(0, 2*np.pi, len(algos), endpoint=False)
 angles=np.concatenate((angles,[angles[0]]))
@@ -433,7 +430,7 @@ fig.show()
     
 #%% RADAR MPC
 
-labels = {'self_cons': 'PV \nself \nconsumption ',
+labels_metrics = {'self_cons': 'PV \nself \nconsumption ',
           'Loss': 'Cost \nPerformance',
           'peak_factor': 'Peak \nAverage Ratio ',
           'soc_dep': 'SOC \nat departure '}
@@ -632,46 +629,6 @@ for i, n in enumerate(algos):
 axes[-1].set_xticks([i for i in range(24)])
 axes[-1].set_xticklabels([str(i)+':00' for i in range(24)])
 plt.legend(loc = 'lower center', ncol = int(len(names)/2), bbox_to_anchor = (0.5,-1.05))
-#%%
-metrics_comp = ['pv', 'load', 'PV self consumption [%]', 'Cost [Cents]']
-
-for g in groups.keys():
-    fig, axes = plt.subplots(len(metrics_comp),1, sharex = True, figsize=(20,12))
-    plt.suptitle(f'{g}', fontsize = 22)
-    algos = groups[g]
-    for i, n in enumerate(algos):
-        
-        
-        data = decisions[n].copy()
-        
-        data['hour'] = [t.hour for t in data.index]
-        data = prices_romande_energie(data)
-        data['PV self consumption [%]'] = 100*(data['pv_ev']+data['pv_load'])/(data['pv'])
-        data['Cash out [Cents]'] = 100*(data['grid_load'] + data['grid_ev'])*data['buy']
-    
-        data['Cash in [Cents]'] = 100*(data['pv_grid'] + data['ev_grid'])*data['buy']
-        
-        data['Cost [Cents]'] = data['Cash out [Cents]'] - data['Cash in [Cents]']
-        data['soc'] = data['soc']*100
-        
-        d = data.groupby('hour').mean()
-        
-        for a in range(2,len(axes)):
-            axes[a].plot(d.index, d[metrics_comp[a]], label = algorithms[n])
-
-        # axes[3].plot(d.index,)
-        #sns.boxplot(x="hour", y="pv", data=decision, ax = axes[0], color = 'green')
-    for a in range(len(metrics_comp[:2])):
-            axes[a].bar(d.index, d[metrics_comp[a]]/1000,color = colors_parameters[a])
-            axes[a].set_ylabel('kW')
-            
-    for a in range(len(axes)):
-        axes[a].grid()
-        axes[a].set_title(metrics_comp[a].upper())
-    
-    axes[-1].set_xticks([i for i in range(24)])
-    axes[-1].set_xticklabels([str(i)+':00' for i in range(24)])
-    plt.legend()
 
     
 #%% RADAR MPC
@@ -785,6 +742,35 @@ for o in decisions:
 scatter_plot_comp('y_dis', metrics, decisions, names, labels_2, special = special, ratio = 1, suptitle = 'Charge switch', unit = 'N')
 
 
+#%%
+labels_metrics_flat = {'self_cons': 'PV self-consumption ',
+ 'Loss': 'Losses',
+ 'peak_factor': 'Peak Average Ratio ',
+ 'soc_dep': 'SOC at departure '}
 
+metrics = ['self_cons', 'Loss', 'peak_factor']
+for g in groups.keys():
+    fig, axes = plt.subplots(len(metrics),1, figsize=(25,18))
+    plt.suptitle(f'{g}', fontsize = 22)
+    algos = groups[g]
+    for i,m in enumerate(metrics):
+        df = stats_df[m]
+
+        for n in algos:
+            
+            # sns.kdeplot(data = data, x = df[n], cumulative=True, linewidth = 2,
+            #                 color = color_codes[n], label = algorithms[n], ax = axes[i], fill = True)
+            axes[i].hist(df[n], color = color_codes[n], bins = 60, cumulative = True, density = True,
+                         label = algorithms[n], alpha = 0.4)
+
+    for m in range(len(metrics)):
+        axes[m].grid(True)
+        axes[m].set_title(labels_metrics_flat[metrics[m]], fontsize = 15)
+        axes[m].set_xlabel(None)
+        axes[m].set_yticks(np.arange(0,1.2,0.2))
+        axes[m].set_yticklabels([int(i*100) for i in np.arange(0,1.2,0.2)])
+        axes[m].set_ylabel('%')
+    axes[-1].legend(fontsize = 15, loc = 'upper left')
+    
 
 
