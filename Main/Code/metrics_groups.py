@@ -493,3 +493,12 @@ for g in groups.keys():
     fig.legend(handles=patches, loc='upper right', bbox_to_anchor = (0.8, 0.95), ncol = 4)
     
     fig.show()
+    
+#%%
+variables = ['pv_ev','pv_load','grid_ev','grid_load','ev_grid','y_buy','y_sell','y_ch','y_dis','avail','cost','self_cons','peak_factor']
+
+for s in stats:
+    c = stats[s][variables].corr()
+    plt.figure(figsize = (16,9))
+    plt.title(s)
+    sns.heatmap(c.loc[:,['cost','self_cons','peak_factor']], annot=True)
