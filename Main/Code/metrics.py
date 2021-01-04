@@ -42,7 +42,7 @@ color_codes = {'v2g_opti_cost':palette[0],
                 'v2g_mpc_s_cvar_soc_pv':palette[4]}
 
 
-folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/Full/'
+folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/'
 
 
 from df_prepare import data_PV_csv, data_EV_csv, data_spot_market_csv, prices_romande_energie
@@ -157,6 +157,12 @@ methods = ['Perfect Foresight  \nExp: Cost \nExp: SOC',  'MPC deterministic \nEx
             'MPC stochastic \nExp: PV \nExp: SOC', 
             'MPC stochastic \nExp: PV, \nCVaR 75%: SOC ']
 
+import random
+range_w = np.arange(0.15,0.3,0.02)
+obj = 'peak'
+color_codes = {f'opti_{obj}_{np.round(i,5)}': palette[random.randint(0, 9)] for j,i in enumerate(range_w)}
+
+methods = [f'SOC weight {np.round(i,5)}' for j,i in enumerate(range_w)]
 
 names = list(color_codes.keys())
 
@@ -180,7 +186,7 @@ metrics = ['self_cons', 'soc_dep', 'Loss', 'peak_factor']
 stats_df = {m: pd.DataFrame(data = {n: list(stats[n].loc[:,m] )
                              for n in names}) for m in metrics}
 
-benchmark = 'v2g_opti_cost'
+benchmark = f'opti_{obj}_{range_w[0]}'
 n_episodes = len(stats[benchmark])
 
 range_episodes = range(int(stats[benchmark].index[0]), int(stats[benchmark].index[-1] + 1))
@@ -189,30 +195,15 @@ metrics_title = ['PV self-consumption','SOC at Departure', 'Median Loss', 'Peak 
 metrics_label = ['%','%', 'CHF','%']
 metrics_props = {metrics[i]: {'title': metrics_title[i],'label': metrics_label[i]} for i in range(len(metrics))}
 
-#%%     
-group_code = {'cost': [], 'peak': [], 'pv': [],
-          'opti':[], 'mpc_d': [], 'mpc_s': [], 'mpc_s_cvar': []}
 
-group_names = ['Objective: Cost','Objective: Peak Shaving', 'Objective: PV',
-               'Method: Perfect Foresight','Method: MPC deterministic',
-               'Method: MPC stochastic, Expected', 'Method: MPC stochastic, CVaR']
-groups = {}
-for n in names:
-    
-    for i,g in enumerate(group_code.keys()):
-        
-        if g in n:
-            
-            group_code[g].append(n)
-            
-        groups[group_names[i]] = group_code[g]
 #%% box plot variation
+objectives = [ 'peak_factor', 'soc_dep',]
+title = metrics_props[objectives[0]]['title']
+fig, axes = plt.subplots(len(objectives),1, figsize=(16,9), sharex = True, dpi = 600)
+plt.suptitle(f' Relative comparison with {methods[0]},{title}')
 
-fig, axes = plt.subplots(len(metrics),1, figsize=(16,9), sharex = True)
-#plt.suptitle(' Relative comparison with optimal solution', fontsize = 25)
 
-
-for i,j in zip(metrics,range(len(axes))):
+for i,j in zip(objectives,range(len(axes))):
     df = stats_df[i].copy()
     df_dict = {}
     for n in names:
@@ -240,9 +231,10 @@ fig.show()
 
 #%% Box plot self, soc, cons
 
-fig, axes = plt.subplots(len(metrics),1, sharex = True, figsize=(25,16))
 
-for i, m in enumerate(metrics):
+fig, axes = plt.subplots(len(objectives),1, sharex = True, figsize=(16,9),dpi = 600)
+
+for i, m in enumerate(objectives):
     
     s_df = stats_df[m]
     

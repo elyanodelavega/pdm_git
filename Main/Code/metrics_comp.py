@@ -14,7 +14,7 @@ import numpy as np
 
 from df_prepare import  prices_romande_energie
 
-folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/Full/'
+folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/opti/'
 
 
 
@@ -22,44 +22,29 @@ folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/Full/'
 palette = sns.color_palette()
 
 
-color_codes = {'v2g_opti_cost':palette[0],
-                'v2g_mpc_d_cost':palette[1],
-                'v2g_mpc_s_cost':palette[2],
-                'v2g_mpc_s_cvar_soc_cost':palette[3],
+color_codes = {'v1g_mpc_d_cost':palette[7],
+                'v1g_mpc_d_peak': palette[8],
+                'v1g_mpc_d_pv':palette[9],
+                'v2g_mpc_d_cost':palette[4],
+                'v2g_mpc_d_peak': palette[5],
+                'v2g_mpc_d_pv':palette[6]}
+
+color_codes = {'v1g_opti_cost':palette[7],
+                'v1g_opti_peak': palette[8],
+                'v1g_opti_pv':palette[9],
+                'v2g_opti_cost':palette[4],
                 'v2g_opti_peak': palette[5],
-                'v2g_mpc_d_peak': palette[6],
-                'v2g_opti_pv':palette[7],
-                'v2g_mpc_d_pv':palette[8],
-                'v2g_mpc_s_pv':palette[9],
-                'v2g_mpc_s_cvar_soc_pv':palette[4]}
-
-# color_codes = {'opti_cost':palette[0],
-#                 'mpc_d_cost':palette[1],
-#                 'mpc_s_cost':palette[2],
-#                 'mpc_s_cvar_soc_cost':palette[3],
-#                 'opti_peak': palette[5],
-#                 'mpc_d_peak': palette[6],
-#                 'opti_pv':palette[7],
-#                 'mpc_d_pv':palette[8],
-#                 'mpc_s_pv':palette[9],
-#                 'mpc_s_cvar_soc_pv':palette[4]}
-
-methods = ['Perfect Foresight  \nExp: Cost \nExp: SOC',  'MPC deterministic \nExp: Cost \nExp: SOC', 
-           'MPC stochastic \nExp: Cost \nExp: SOC', 
-           'MPC stochastic \nExp: Cost, \nCVaR 75%: SOC',
-            'Perfect Foresight \nExp: Peak Shaving \nExp: SOC',
-            'MPC deterministic \nExp: Peak Shaving \nExp: SOC',
-            'Perfect Foresight \nExp: PV \nExp: SOC',
-            'MPC deterministic \nExp: PV \nExp: SOC', 
-            'MPC stochastic \nExp: PV \nExp: SOC', 
-            'MPC stochastic \nExp: PV, \nCVaR 75%: SOC ']
-
-# import random
+                'v2g_opti_pv':palette[6]}
 
 
-# color_codes = {f'opti_pv_{i}': palette[random.randint(0, 10)] for j,i in enumerate(np.arange(0,1.1, 0.1))}
 
-# methods = [f'SOC weight {i}' for j,i in enumerate(np.arange(0,1.1, 0.1))]
+methods = ['V1X \nExp: Cost \nExp: SOC', 
+           'V1X \nExp: Peak Shaving \nExp: SOC', 
+           'V1X \nExp: PV \nExp: SOC',
+           'V2X \nExp: Cost \nExp: SOC', 
+           'V2X \nExp: Peak Shaving \nExp: SOC', 
+           'V2X \nExp: PV \nExp: SOC'
+           ]
 
 names = list(color_codes.keys())
 
@@ -75,22 +60,29 @@ for n in names:
 algorithms = {names[i]: methods[i] for i in range(len(names))}
 
 #%%
-metrics = ['self_cons', 'soc_dep', 'Cost', 'peak_factor']
-metrics_title = ['PV self-consumption','SOC at Departure', 'Median Cost', '$PAR^{-1}$' ]
-metrics_unit = ['%','%', 'CHF','%']
+metrics = ['self_cons', 'soc_dep', 'Cost', 'peak_factor', 'share_PV_ext']
+metrics_title = ['PV self-consumption','SOC at Departure', 'Median Cost', 'ARP', 'PV penetration' ]
+metrics_unit = ['%','%', 'CHF','%', '%']
 metrics_props = {metrics[i]: {'title': metrics_title[i],'unit': metrics_unit[i]} for i in range(len(metrics))}
 
-labels_radar = {'self_cons': 'PV',
-          'Cost': 'Cost',
-          'peak_factor': '$PAR^{-1}$',
-          'soc_dep': 'SOC '}
+labels_radar = {'self_cons': 'PV self.',
+          'Cost': 'Cost perf.',
+          'peak_factor': 'ARP',
+          'soc_dep': 'SOC ',
+          'share_PV_ext': 'PV pen.'}
 #%%
-group_code = {'cost': [], 'peak': [], 'pv': [],
-          'opti':[], 'mpc_d': [], 'mpc_s': [], 'mpc_s_cvar': []}
+def get_obj(algo):
+    if 'cost' in algo:
+        return 'Cost'
+    elif 'pv' in algo:
+        return 'self_cons'
+    else:
+        return 'peak_factor'
+#%%
+group_code = {'cost': [], 'peak': [], 'pv': [], 'v1g': [], 'v2g': []}
 
 group_names = ['Objective: Cost','Objective: Peak Shaving', 'Objective: PV',
-               'Perfect Foresight','MPC deterministic',
-               'MPC stochastic, Expected', 'MPC stochastic, CVaR']
+               'V1X','V2X']
 groups = {}
 for n in names:
     
@@ -101,13 +93,7 @@ for n in names:
             group_code[g].append(n)
             
         groups[group_names[i]] = group_code[g]
-        
-algos_mpc_s =  list(groups['MPC stochastic, Expected'])
-for a in algos_mpc_s:    
-    if 'cvar' in a:
-        algos_mpc_s.remove(a)
 
-groups['MPC stochastic, Expected'] = algos_mpc_s
 
 
 algos_specs = {n: {'Objective': None, 'Method': None} for n in names}
@@ -160,8 +146,19 @@ def quick_stats(decisions, spot_prices):
     soc_arr.extend([data.soc[i]*100 for i in range(1, len(data)) if data.avail[i] > data.avail[i-1]])
     
     soc_dep = [data.soc[i] *100 for i in range(1, len(data)) if data.avail[i] < data.avail[i-1]]
-        
-    self_cons = 100*(df['pv_load'] + df['pv_ev'])/df['pv']
+    
+    pv_consumed = df['pv_load'] + df['pv_ev']
+    self_cons = 100*(pv_consumed)/df['pv']
+    
+    total_consumed = df.pv_ev + df.grid_ev + df.pv_load + df.grid_load
+
+    share_pv = pv_consumed/total_consumed
+    pv_in_ev_perc = df.pv_ev/(df.pv_ev + df.grid_ev)
+    
+    discharge = df.ev_load + df.ev_grid
+    
+    share_pv_ext = (pv_consumed + pv_in_ev_perc * discharge)/total_consumed
+    
    
     df['soc_arr'] = soc_arr 
     
@@ -170,6 +167,10 @@ def quick_stats(decisions, spot_prices):
     df['self_cons'] = self_cons
 
     df['Cost'] = df_med['cost']
+    
+    df['share_PV'] = share_pv
+    
+    df['share_PV_ext'] = 100*share_pv_ext
     
     df['peak_factor'] = 100*df_mean.grid_bought / df_max.grid_bought
     
@@ -198,6 +199,17 @@ def adjust(s):
         s = s.replace(' ', '\n')
     return s    
 #%%
+# metrics = ['share_PV','share_PV_ext', 'soc_dep', 'Cost', 'peak_factor']
+# metrics_title = ['PV share', 'PV share extended','SOC at Departure', 'Median Cost', '$ARP$' ]
+# metrics_unit = ['%','%','%', 'CHF','%']
+# metrics_props = {metrics[i]: {'title': metrics_title[i],'unit': metrics_unit[i]} for i in range(len(metrics))}
+
+# labels_radar = {'share_PV': 'PV',
+#                 'share_PV_ext': 'PV extended',
+#           'Cost': 'Cost',
+#           'peak_factor': 'ARP',
+#           'soc_dep': 'SOC '}
+#%%
 stats = {n: quick_stats(decisions[n],prices_romande_energie) for n in names}
 
 
@@ -225,6 +237,7 @@ def ax_boxplot_metrics(ax, metric, g, ylim = None, leg = True):
     
     new_df = {}
     for n in algos:
+
         values = list(s_df[n].values)
         values.remove(max(values))
         new_df[algos_specs[n][s]] = values
@@ -246,6 +259,37 @@ def ax_boxplot_metrics(ax, metric, g, ylim = None, leg = True):
         
     return ax
 
+#%% box plot metrics
+
+
+def ax_boxplot_metrics_variation(ax, metric, v1g, v2g):
+    # fig, axes = plt.subplots(len(metrics),1, sharex = True, figsize=(25,16))
+    algos = groups[g]
+
+    s_df = stats_df[metric]
+    
+    df = pd.DataFrame()
+    df['V2X variation'] = 100*(s_df[v2g]/s_df[v1g])-100
+
+    # sns.boxplot(data = df, ax = axes[i], orient = 'v', palette = [color_codes[n] for n in names])
+    sns.boxplot(data = df, ax = ax, palette = [color_codes[n] for n in algos])
+    
+    #axes[i, 0].set_ylabel(names_map[n], fontsize = 23)
+
+    ax.set_title(metrics_props[metric]['title'])
+    ax.set_ylabel('%')
+
+
+    ax.grid()
+
+        
+    return ax
+
+#%%
+d = decisions['v2g_opti_cost'].copy()
+new_df = d.copy()
+d1 = d[d.episode == 1]
+d1['%pvev'] = d.pv_ev/(d.pv_ev + d.grid_ev)
 #%% AX RADAR
 
 def ax_radar(ax, g, x_legend = 0.5, y_legend = -0.5, start = np.pi/4, leg = True):
@@ -465,57 +509,72 @@ def ax_pv_repartition(ax, g):
     return ax
 
 
+#%%
+fig, axes = plt.subplots(1, len(metrics)-1, sharey = True, figsize=(16, 9), dpi = 600)
+plt.suptitle('V2X impact per objective', fontsize = 18)
+for i, g in enumerate(groups.keys()):
+    if 'Objective' in g:
+        
+        algos = groups[g]
+        obj = get_obj(algos[0])
+        for a in algos:
+            if algos_specs[a]['Method'] == 'V1X':
+                v1g = a
+            else:
+                v2g = a
 
+        ax = axes[i]
+        ax_boxplot_metrics_variation(ax,obj,v1g,v2g)
+    
+    else:
+        continue
+ax_boxplot_metrics_variation(axes[-1],'share_PV_ext',v1g,v2g)
+fig.show()
 #%%
 for g in groups.keys():
-    algos = groups[g]
-    fig = plt.figure(figsize=(22, 12))
-    plt.suptitle(g, fontsize = 18)
-    ax1 = fig.add_subplot(1,4,1, polar = True)
-    ax_radar(ax1, g, leg = False)
-    
-    
-    ax3= fig.add_subplot(4,4,2)
-    ax4= fig.add_subplot(4,4,6)
-    ax5= fig.add_subplot(4,4,10)
-    ax6= fig.add_subplot(4,4,14)
-    
-    ax_box = [ax3, ax4, ax5, ax6]
-    
-    for i in range(len(ax_box)):
-        m = metrics[i]
-        ax = ax_box[i]
-        ax_boxplot_metrics(ax, m, g, ylim = metrics_ylim[m], leg = False)
+    if 'Objective' in g:
         
-    patches1 = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in algos]
-    ax1.legend(handles=patches1, loc='lower center',ncol=int(len(algos)/2), bbox_to_anchor = (0.5,-0.8)) 
-    
-    
-    ax7= fig.add_subplot(2,4,3)
-    ax8= fig.add_subplot(2,4,7)
-    ax9= fig.add_subplot(2,4,4)
-    ax10= fig.add_subplot(2,4,8)
-    
-    ax_ev_charge(ax7, g)
+        algos = groups[g]
+        obj = get_obj(algos[0])
+        for a in algos:
+            if algos_specs[a]['Method'] == 'Method: V1X':
+                v1g = a
+            else:
+                v2g = a
+        fig = plt.figure(figsize=(16, 9), dpi = 600)
+        plt.suptitle(g, fontsize = 18)
+        ax1 = fig.add_subplot(1,3,1, polar = True)
+        ax_radar(ax1, g, leg = False)
         
-    ax_ev_discharge(ax9, g)
-    
-    
-    ax_load_repartition(ax8, g)
-    
-    ax_pv_repartition(ax10, g)
-    
-    patches = [mpatches.Patch(color=color_indices[labels_tot[i]], label= labels_tot[i]) for i in range(len(labels_tot))]
-
-    fig.legend(handles=patches, loc='upper right', bbox_to_anchor = (0.8, 0.95), ncol = 4)
-    
-    fig.show()
-    
+        ax2 = fig.add_subplot(1,3,2)
+        ax_boxplot_metrics_variation(ax2,obj,v1g,v2g)
+        
+        ax3= fig.add_subplot(4,3,3)
+        ax4= fig.add_subplot(4,3,6)
+        ax5= fig.add_subplot(4,3,9)
+        ax6= fig.add_subplot(4,3,12)
+        
+        ax_box = [ax3, ax4, ax5, ax6]
+        leg = False
+        for i in range(len(ax_box)):
+            m = metrics[i]
+            ax = ax_box[i]
+            if i == len(ax_box)-1:
+                leg = True
+            ax_boxplot_metrics(ax, m, g, ylim = None, leg = leg)
+            
+        patches1 = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in algos]
+        ax1.legend(handles=patches1, loc='lower center',ncol=int(len(algos)), bbox_to_anchor = (0.5,-0.4)) 
+        
+        
+        fig.show()
+    else:
+        continue
 #%%
-variables = ['pv_ev','pv_load','grid_ev','grid_load','ev_grid','y_buy','y_sell','y_ch','y_dis','avail','cost','self_cons','peak_factor']
+# variables = ['pv_ev','pv_load','grid_ev','grid_load','ev_grid','y_buy','y_sell','y_ch','y_dis','avail','cost','self_cons','peak_factor']
 
-for s in stats:
-    c = stats[s][variables].corr()
-    plt.figure(figsize = (16,9))
-    plt.title(s)
-    sns.heatmap(c.loc[:,['cost','self_cons','peak_factor']], annot=True)
+# for s in stats:
+#     c = stats[s][variables].corr()
+#     plt.figure(figsize = (16,9))
+#     plt.title(s)
+#     sns.heatmap(c.loc[:,['cost','self_cons','peak_factor']], annot=True)

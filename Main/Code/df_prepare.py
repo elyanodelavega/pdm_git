@@ -65,7 +65,7 @@ def time_to_trigo(time_list):
     return hours_trigo, days_trigo
     
 
-def data_PV_csv(df_file_name, hourly_data = True, start_month = 5, year = 2020):
+def data_PV_csv(df_file_name, hourly_data = True,start_day = 9, start_month = 9, year = 2019):
     df = pd.read_csv(df_file_name)
     t_res = float(df['ts'][0].split(':')[1])
     df['dt'] = pd.to_datetime(df['dt'], dayfirst= True)
@@ -75,7 +75,7 @@ def data_PV_csv(df_file_name, hourly_data = True, start_month = 5, year = 2020):
     
     data = df.copy()
     
-    start = pd.Timestamp(day = 1, month = start_month, year = year)
+    start = pd.Timestamp(day = start_day, month = start_month, year = year)
     
     data = data[start:]
     

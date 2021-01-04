@@ -97,7 +97,7 @@ def plot_MPC_det(decisions, t_decision, results, pv_pred, load_pred, figname = N
         arrowstyle='<-'
 
     axes[0].annotate(text='', xy=(ta,ypos), xytext=(td,ypos), arrowprops=dict(arrowstyle=arrowstyle,color='black'))
-    axes[0].annotate(text='Episode '+str(int(episode)),xy=(((ta+td)/2), ypos+0.2), fontsize=12.0, ha='center')
+    axes[0].annotate(text='EV plugged, Episode '+str(int(episode)),xy=(((ta+td)/2), ypos+0.2), fontsize=12.0, ha='center')
 
     # top subplot
     
@@ -206,7 +206,7 @@ def plot_MPC_sto(decisions, t_decision, results, pv_pred, load_pred, soc_pred, f
         arrowstyle='<-'
 
     axes[0].annotate(text='', xy=(ta,ypos), xytext=(td,ypos), arrowprops=dict(arrowstyle=arrowstyle,color='black'))
-    axes[0].annotate(text='Episode '+str(int(episode)),xy=(((ta+td)/2), ypos+0.2), fontsize=12.0, ha='center')
+    axes[0].annotate(text='EV plugged, Episode '+str(int(episode)),xy=(((ta+td)/2), ypos+0.2), fontsize=12.0, ha='center')
 
     # top subplot
     
@@ -330,7 +330,7 @@ def plot_results_day_ahead(df,predictions = None, figname = None, img_path = Non
     for e in range(len(positions)):
         xpos = positions[e]
         axes[0].annotate(s='', xy=(xpos[0],ypos), xytext=(xpos[1],ypos), arrowprops=dict(arrowstyle='<->',color='black'))
-        axes[0].annotate(s='Episode '+str(e+1),xy=((xpos[0] + xpos[1])/2, ypos+0.2), fontsize=12.0, ha='center')
+        axes[0].annotate(text='EV plugged, Episode '+str(e+1),xy=((xpos[0] + xpos[1])/2, ypos+0.2), fontsize=12.0, ha='center')
     
     # top subplot
     axes[0].fill_between(x, dataset['load'], color=palette[3], alpha=0.3)
@@ -441,7 +441,7 @@ def plot_results_deterministic(decisions, episodes,method, figname = None, img_p
         x2 = td[i]
     
         axes[0].annotate(s='', xy=(x1,ypos), xytext=(x2,ypos), arrowprops=dict(arrowstyle='<->',color='black'))
-        axes[0].annotate(s='Episode '+str(int(episodes[i])),xy=(((x1+x2)/2), ypos+0.2), fontsize=12.0, ha='center')
+        axes[0].annotate(text='EV plugged, Episode '+str(int(episodes[i])),xy=(((x1+x2)/2), ypos+0.2), fontsize=12.0, ha='center')
     
 
     # top subplot
@@ -524,7 +524,7 @@ def plot_results_comparison(decisions, episodes, figname = None, img_path = None
                 x2 = td[i]
             
                 axes[0].annotate(s='', xy=(x1,ypos), xytext=(x2,ypos), arrowprops=dict(arrowstyle='<->',color='black'))
-                axes[0].annotate(s='Episode '+str(int(episodes[i])),xy=(((x1+x2)/2), ypos+0.2), fontsize=12.0, ha='center')
+                axes[0].annotate(text='EV plugged, Episode '+str(int(episodes[i])),xy=(((x1+x2)/2), ypos+0.2), fontsize=12.0, ha='center')
             
             
             # top subplot
@@ -571,14 +571,18 @@ def plot_dropout_results(data_full,pred_variable, predictions,
                          plot_cumulative = False, plot_boxplot = False,
                          boxplot_dropouts = []):
     ts = list(predictions.keys())
-    dropouts = list(predictions.keys())
+    dropouts = list(predictions_dropout.keys())
+    sns.set_style("whitegrid")
+    last = list(predictions.keys())[-1] + pd.Timedelta(hours = n_hour_future)
+    data = data_full[:last]
     for t_forecast in ts:
         t = t_forecast
         t_end = t + pd.Timedelta(hours = n_hour_future)
        
         for d in dropouts:
+
             dr = predictions_dropout[d][t]
-            nd = predictions[t][pred_variable]
+            nd = predictions[t]
             medians = np.median(dr.T, axis = 1)
             dr_scaled = np.zeros(dr.shape)
             nd_scaled = np.zeros(nd.shape)
@@ -596,7 +600,7 @@ def plot_dropout_results(data_full,pred_variable, predictions,
             t = t_forecast
             t_end = t + pd.Timedelta(hours = n_hour_future)
             dr = predictions_dropout[d][t]
-            nd = predictions[t][pred_variable]
+            nd = predictions[t]
             medians = np.median(dr.T, axis = 1)
             dr_scaled = np.zeros(dr.shape)
             nd_scaled = np.zeros(nd.shape)
@@ -634,39 +638,75 @@ def plot_dropout_results(data_full,pred_variable, predictions,
         plt.show()
     
     if plot_cumulative:
-        actual_values = list(data_full[pred_variable])
+        actual_values = list(data[pred_variable])
         #actual_values = list(data[idx_start:idx_end+n_hour_future][pred_variable])
         N1 = len(actual_values)
+
         X1 = np.sort(actual_values)
         F1 = np.array(range(N1))/float(N1)
         
         
-        
+        plt.figure(figsize = (9,5), dpi = 600)
         for d in dropouts:
             values = np.concatenate(dropout_values[d])
             N2 = len(values)
             X2 = np.sort(values)
             F2 = np.array(range(N2))/float(N2)
-            plt.plot(X2, F2, label = d)
+            plt.plot(X2, F2, label = f'dropout = {d}')
             
         plt.plot(X1, F1,'--', color = 'black', label = 'actual')
         plt.title(f'Distribution of {pred_variable} values')
         plt.xlabel('Watts')
         plt.ylabel('Density')
         plt.legend()
-        plt.grid()
+        plt.grid(True)
+        plt.show()
+        
+        plt.figure(figsize = (9,5), dpi = 600)
+        mse = []
+        X1_quant = np.quantile(X1/float(N1), np.arange(0,1,0.05))
+        for d in dropouts:
+            values = np.concatenate(dropout_values[d])
+
+            X2 = np.sort(values)
+            X2_quant = np.quantile(X2/float(N2), np.arange(0,1,0.05))
+            
+
+            mse.append(np.mean(np.square(X1_quant - X2_quant)))
+
+
+        plt.plot(dropouts, mse, marker = 'o')
+        plt.title('MSE evaluation of dropouts from cdf')
+        plt.ylabel('MSE')
+        plt.xlabel('Dropout')
+        plt.xticks(dropouts)
+
+        plt.grid(True)
         plt.show()
         
     if plot_boxplot:
         for d in boxplot_dropouts:
+
             for t in ts:
-                t_end = t +  pd.Timedelat(hours = n_hour_future)
+                plt.figure(figsize = (9,6), dpi = 600)
+                t_end = t +  pd.Timedelta(hours = n_hour_future)
                 actual = list(data_full.loc[t:t_end, pred_variable])
-                predict_no_drop = predictions[t][pred_variable]
+                predict_no_drop = predictions[t]
+                
                 pred = predictions_dropout[d][t]
-                sns.boxplot(data = pred)
+                pred_df = pd.DataFrame(pred)
+                pred_df.rename(columns = {i: i+1 for i in range(23)}, inplace = True)
+
+                sns.boxplot(data = pred_df)
+                
                 plt.plot(actual, color = 'black', label = 'Actual')
                 plt.plot(predict_no_drop, linestyle = '--', color = 'black', label = 'Prediction no dropout')
                 plt.legend()
-                plt.title(f'{t.day}.{t.month}, prediction at {t.hour}:00, dropout: {d}')
+                plt.xlim(left = -1)
+                ticks = np.arange(-1,24)
+                labels = [t+1 for t in ticks]
+                plt.xticks(ticks,labels)
+                plt.ylabel('W')
+                plt.xlabel('Hours ahead forecast')
+                plt.title(f'{t.day}.{t.month}.{t.year}, prediction at {t.hour}:00, dropout: {d}')
                 plt.show()

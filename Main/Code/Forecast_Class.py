@@ -41,11 +41,15 @@ def time_to_trigo(Data_index):
     
     return hours_trigo, days_trigo
 
+def MSE(x_real, x_pred):
+    return np.mean(np.square(x_real - x_pred))
+
 #%% LSTM
 
 class Forecast_LSTM:
     
-    def __init__(self, pred_variable, data, n_hour_future, ratio = 1):
+    def __init__(self, pred_variable, data, n_hour_future, ratio = 1,
+                 test_days = 21):
         ''' pred_variable: str, column name of the variable to predict
             data: pandas Dataframe, PV simulation 
             n_hour_future: int, number of hour to predict in the future
@@ -55,7 +59,7 @@ class Forecast_LSTM:
         self.name = pred_variable
         self.data = data
         self.n_hour_future = n_hour_future
-
+        self.test_days = test_days
         self.pred_variable = pred_variable
         
         # position in columns of the pred_variable
@@ -68,14 +72,14 @@ class Forecast_LSTM:
         number_days_full = math.floor(self.data.shape[0]/(24 * self.f))
         
         # Train/test split
-        train_days = math.floor(0.7 * number_days_full)
-        test_days = math.floor(0.07 * number_days_full)
+        train_days = math.floor(0.94 * number_days_full)
+        test_days = math.floor(0.06 * number_days_full)
         n_hour_past = n_hour_future
         
         self.period_past = int(self.f*n_hour_past)*ratio
         self.period_future = int(self.f*n_hour_future) 
         
-        train_res = int(train_days*24*self.f)
+        train_res = int((number_days_full-test_days)*24*self.f)
         test_res = int(test_days*24*self.f)
         
         
@@ -227,7 +231,7 @@ class Forecast_LSTM:
 
         
     
-    def build_LSTM(self, batch_size = 72, epochs = 50, dropout = 0, plot_results = False):
+    def build_LSTM(self, neurons_2 = 100, neurons_3 = 50, batch_size = 72, epochs = 50, dropout = 0, plot_results = False):
         '''Build LSTM architecture
             Input:
                 batch_size: int
@@ -237,11 +241,15 @@ class Forecast_LSTM:
             Output:
                 None
                 '''
+        self.neurons_2 = neurons_2
+        self.neurons_2 = neurons_3
+        self.epochs = epochs
+        self.batch_size = batch_size
         # LSTM architecture
         model = Sequential()
-        model.add(LSTM(units=50, return_sequences=True, input_shape=(self.features_set.shape[1], self.features_set.shape[2])))  
+        model.add(LSTM(units=100, return_sequences=True, input_shape=(self.features_set.shape[1], self.features_set.shape[2])))  
         model.add(Dropout(dropout)) 
-        model.add(LSTM(units=self.period_past))  
+        model.add(LSTM(units=50))  
         model.add(Dropout(dropout)) 
         model.add(Dense(self.period_future,activation='sigmoid')) 
         
@@ -266,26 +274,27 @@ class Forecast_LSTM:
             Output:
                 None '''
         #predict
-        predictions_scaled = model.predict(self.test_features)
+        self.predictions_scaled = model.predict(self.test_features)
         
         #unscale predictions
-        predictions_unscaled = self.unscale_predictions(predictions_scaled)
+        self.predictions_unscaled = self.unscale_predictions(self.predictions_scaled)
         
-        # plot results
-        if plot_results:
-            
-            self.plot_results_test(predictions_unscaled, self.test_data)
-            
-        # inherit in class
-        self.predictions_unscaled = predictions_unscaled
-        self.predictions_scaled = predictions_scaled
-        
+
         # actual values
         comparison_unscaled = self.scaler.inverse_transform(self.test_data)
 
         self.final_comparison = comparison_unscaled[self.period_past:-self.period_future,self.pred_pos]
         
-    
+        
+        
+        # plot results
+        if plot_results:
+            
+            self.plot_results_test(self.predictions_unscaled, self.test_data)
+            
+        
+        
+        
     
     def predict(self, model, time, dataframe = False, plot_results = False):
         ''' Predict at specific time
@@ -507,20 +516,50 @@ class Forecast_LSTM:
                 comparison_unscaled: array
             Output: Figure'''
         comparison_unscaled = self.scaler.inverse_transform(comparison_unscaled)
+        plt.figure(figsize=(12,7), dpi = 500)
         
-        plt.figure(figsize=(16,9))
+        self.MSEs = {}
+        l = len(self.predictions_unscaled)
+        for t in range(self.n_hour_future):
+            self.MSEs[t] = mean_squared_error(self.final_comparison[t:], self.predictions_unscaled[:l-t,t])
+            
+        plt.plot(range(1,self.n_hour_future+1),self.MSEs.values(), marker = 'o')
+        
+        plt.annotate(f'Model Settings: \nEpochs: {self.epochs}, batchsize: {self.batch_size}, Optimizer: Adam\nAverage MSE: {int(np.mean(list(self.MSEs.values())))} ', 
+                     xy=(0.06, .005),  xycoords='figure fraction', horizontalalignment='left', verticalalignment='bottom', fontsize=13)
+        plt.xlabel('Hours ahead forecasting')
+        plt.ylabel('MSE')
+        plt.xticks(np.arange(24))
+        
+        title = f'MSE results for {self.pred_variable}'
+        
+        plt.ylim(bottom = 0)
+        plt.title(title)
+        plt.grid(True)
+        plt.show()
+
+        
+        plt.figure(figsize=(12,7), dpi = 500)
         plt.plot(predictions_scaled[:,0], label = 'Predicted')
         plt.plot(comparison_unscaled[self.period_past:-self.period_future,self.pred_pos],label = 'Expected')
-        plt.annotate('Model Settings: ' + 'Epochs: 50, ' + 'Batchsize: 72, ' + 'Optimizer: Adam, '+ f'MSE: 0.0059', xy=(0.06, .015),  xycoords='figure fraction', horizontalalignment='left', verticalalignment='bottom', fontsize=13)
+        plt.annotate(f'Model Settings: \nEpochs: {self.epochs}, batchsize: {self.batch_size}, Optimizer: Adam\nAverage MSE: {int(np.mean(list(self.MSEs.values())))} ',
+                     xy=(0.06, .005),  xycoords='figure fraction', horizontalalignment='left', verticalalignment='bottom', fontsize=13)
         plt.legend()
-        plt.xlabel('Hours')
+        ticks = np.arange(0,len(comparison_unscaled), 24)
+        labels = [i for i in range(len(ticks))]
+        plt.xticks(ticks, labels)
+        plt.xlabel('Days')
+        plt.xlim(right = len(predictions_scaled))
         plt.ylabel('Watts')
         
-        if title is None:
-            title = f'Model test results for {self.pred_variable}'
-            
+        
+        title = f'Model Validation results for {self.pred_variable}'
+        plt.ylim(bottom = 0)
         plt.title(title)
+        plt.grid(True)
         plt.show()
+        
+        
     
 #%% Functions
 class Forecast_ARIMA:
@@ -537,55 +576,88 @@ class Forecast_ARIMA:
         self.dataset = data.loc[:,pred_variable]
         
         
-    def evaluate_arima_model(self, arima_order):
-    
-        X = self.dataset
+    def evaluate_arima_model(self, dataset, arima_order):
+        ''' Fit an arima model with a particular order (p,d,q)
+            and evaluate the MSE
+            input:
+                dataset: dataframe
+                arima_order: (int,int,int)
+            output:
+                error: float'''
+        
+        # Train/Test split
+        X = dataset
         train_size = int(len(X) * 0.66)
         train, test = X[0:train_size], X[train_size:]
         history = [x for x in train]
         
+        # predict each time step on a rolling manner
         predictions = list()
         for t in range(len(test)):
+            # Fit
             arima = ARIMA(history, order=arima_order)
             model = arima.fit(disp=0)
+            # Predict
             yhat = model.forecast()[0]
             predictions.append(yhat)
             history.append(test[t])
-        # calculate out of sample error
+        # Calculate out of sample error
         error = mean_squared_error(test, predictions)
         return error
  
 
     def evaluate_models(self, p_values, d_values, q_values):
+        ''' Find the best (p,d,q) order
+            input:
+                p,d,q values: [int],[int],[int]
+            output:
+                results: dict'''
         dataset = self.dataset.astype('float32')
         best_score, best_conf = float("inf"), None
+        results =  {}
         for p in p_values:
             for d in d_values:
                 for q in q_values:
                     order = (p,d,q)
                     try:
                         mse = self.evaluate_arima_model(dataset, order)
+                        results[order] = mse
                         if mse < best_score:
                             best_score, best_conf = mse, order
-                        print(f'ARIMA{order} MSE=(int{mse})')
+                        print(f'ARIMA{order} MSE={np.round((mse),2)}')
                     except:
                         continue
     
-        print(f'Best: ARIMA{order} MSE=(int{mse})')
+        print(f'Best: ARIMA{best_conf} MSE={np.round((best_score),2)}')
         
         self.best_conf = best_conf
     
+        return results
     
     def predict(self, t_forecast, t_end, dataframe = True, best_conf = (2, 1, 1), 
                         plot_results = False, conf_interval = False, iterative = False, n_past = 300):
-        
+        '''Predict values with ARIMA model at given time t_forecast until t_end
+            Input:
+                t_forecast, t_end: pd.Timestamp()
+                dataframe: results in pd.Dataframe, bool
+                best_conf: (int,int,int), (p, d, q)
+                plot_results: bool
+                conf_interval: bool, results with confidence interval
+                iterative: bool, forecast on a rolling manner or by batch, bool
+                n_past: int, dataset size
+            Output:
+                prediction: df or list
+                '''
+        # Initialization
         t_decision = t_forecast - pd.Timedelta(hours = 1)
         previous = list(self.data.loc[:t_decision, self.pred_variable])[-n_past:]
         forecast_window = list(self.data.loc[t_forecast:t_end, self.pred_variable])
         time_window = self.data.loc[t_forecast:t_end].index
     
         history = [p for p in previous]
+
         
+        # Rolling manner
         if iterative:
             predictions = []
             #predictions_low = []
@@ -593,8 +665,10 @@ class Forecast_ARIMA:
             
             
             for t in range(len(forecast_window)):
+                # fit
                 arima = ARIMA(history, order=best_conf)
                 model = arima.fit(disp=0)
+                # Forecast
                 yhat = model.forecast()[0][0]
                 #yhat_low = model.forecast()[2][0][0]
                 #yhat_high = model.forecast()[2][0][1]
@@ -604,18 +678,28 @@ class Forecast_ARIMA:
                 
                 history.append(forecast_window[t])
                 #print(f'{time_window[t]} Expected: {int(forecast_window[t])}, Predicted: {int(yhat)}')
+            data = predictions
         else:
+            
             arima = ARIMA(history, order = best_conf)
+            # Precaution if the model doesn't converge
             try:
+                # Fit
                 model = arima.fit(disp = 0)
                 predictions = model.forecast(len(time_window))[0]
                 data = {f'{self.pred_variable}': predictions}
+                # if negative values predicted
+                print((data>0).all())
                 if (data>0).all():
-                    predictions = self.predict_with_average(t_forecast, t_end)
+                    # predict with average
+                    print(' neg average')
+                    predictions = self.predict_with_stats(t_forecast, t_end)
                     data = {f'{self.pred_variable}': predictions}
-                
+                    
+            # predict with average if model did not converge    
             except:
-                predictions = self.predict_with_average(t_forecast, t_end)
+                print('average')
+                predictions = self.predict_with_stats(t_forecast, t_end)
                 data = {f'{self.pred_variable}': predictions}
             
         if plot_results:
@@ -631,27 +715,37 @@ class Forecast_ARIMA:
         #     data[f'{self.pred_variable}_low'] = predictions_low
         #     data[f'{self.pred_variable}_high'] = predictions_high
         
-        df = pd.DataFrame(data = data, index = time_window)
+        if dataframe == True:
+            return pd.DataFrame(data = data, index = time_window)
+        
+        else:
+            return data
+
         
         
-        
-        return df
-        
-        
-    def predict_with_average(self, t_forecast, t_end):
-        
+    def predict_with_stats(self, t_forecast, t_end, method = 'mean'):
+        ''' predict with average with previous data, based on hour of the day
+        Input:
+            t_forecast, t_end: pd.Timestamp()
+        Output:
+            forecast: list
+        '''
         t_decision = t_forecast - pd.Timedelta(hours = 1)
         hours = [t.hour for t in self.data.index]
         self.data['hour'] = hours
+        
         hours_list = np.unique(hours)
         previous = self.data.loc[:t_decision]
-        average = {h: np.mean([previous[previous['hour'] == h][self.pred_variable]]) for h in hours_list}
+        if method == 'mean':
+            stats = {h: np.mean([previous[previous['hour'] == h][self.pred_variable]]) for h in hours_list}
+        
+        elif method == 'median':
+            stats = {h: np.median([previous[previous['hour'] == h][self.pred_variable]]) for h in hours_list}
+            
         forecast_time = self.data.loc[t_forecast:t_end].index
         
-        forecast = [average[t.hour] for t in forecast_time]
-        
-        #forecast = pd.DataFrame(data = forecast_variable, index = forecast_time, columns=[self.pred_variable])
-        
+        forecast = [stats[t.hour] for t in forecast_time]
+
         
         return forecast
     

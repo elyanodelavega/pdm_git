@@ -10,8 +10,8 @@ import numpy as np
 
 def run_MPC_save(method_name, episode, model, decisions_0,
             Load_model_forecast, PV_model_forecast, PV_LSTM,
-            opti_method, opti_parameters,
-            n_hour_future,t_left):
+            opti_method, opti_parameters,objective_1,
+            n_hour_future, t_left, soc_penalty, lambda_soc = 0.5):
     #MPC stochastic Expected
     e = episode.episode[0]
     episode_length = len(episode)
@@ -56,7 +56,8 @@ def run_MPC_save(method_name, episode, model, decisions_0,
                                                             dropout = 0.35, dataframe = True)
 
         model.optimize(t_decision, t_end, PV_predictions, Load_predictions, forecasting = True, 
-                       method = opti_method, parameters = opti_parameters)
+                       method = opti_method, parameters = opti_parameters,objective_1 = objective_1, 
+                       soc_penalty = soc_penalty, lambda_soc = lambda_soc)
         decisions = model.decisions
         results_mpc = model.results_stochastic()
         
