@@ -692,13 +692,13 @@ class Forecast_ARIMA:
                 print((data>0).all())
                 if (data>0).all():
                     # predict with average
-                    print(' neg average')
+                    
                     predictions = self.predict_with_stats(t_forecast, t_end)
                     data = {f'{self.pred_variable}': predictions}
                     
             # predict with average if model did not converge    
             except:
-                print('average')
+                
                 predictions = self.predict_with_stats(t_forecast, t_end)
                 data = {f'{self.pred_variable}': predictions}
             

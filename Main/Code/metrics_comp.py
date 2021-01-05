@@ -38,12 +38,12 @@ color_codes = {'v1g_opti_cost':palette[7],
 
 
 
-methods = ['V1X \nExp: Cost \nExp: SOC', 
-           'V1X \nExp: Peak Shaving \nExp: SOC', 
-           'V1X \nExp: PV \nExp: SOC',
-           'V2X \nExp: Cost \nExp: SOC', 
-           'V2X \nExp: Peak Shaving \nExp: SOC', 
-           'V2X \nExp: PV \nExp: SOC'
+methods = ['V1X Cost ', 
+           'V1X APR ', 
+           'V1X PV',
+           'V2X Cost', 
+           'V2X APR', 
+           'V2X PV'
            ]
 
 names = list(color_codes.keys())
@@ -61,15 +61,15 @@ algorithms = {names[i]: methods[i] for i in range(len(names))}
 
 #%%
 metrics = ['self_cons', 'soc_dep', 'Cost', 'peak_factor', 'share_PV_ext']
-metrics_title = ['PV self-consumption','SOC at Departure', 'Median Cost', 'ARP', 'PV penetration' ]
+metrics_title = ['PV self-consumption','SOC at Departure', 'Median Cost', 'APR', 'Secondary PV penetration' ]
 metrics_unit = ['%','%', 'CHF','%', '%']
 metrics_props = {metrics[i]: {'title': metrics_title[i],'unit': metrics_unit[i]} for i in range(len(metrics))}
 
 labels_radar = {'self_cons': 'PV self.',
-          'Cost': 'Cost perf.',
-          'peak_factor': 'ARP',
+          'Cost': 'CP',
+          'peak_factor': 'APR',
           'soc_dep': 'SOC ',
-          'share_PV_ext': 'PV pen.'}
+          'share_PV_ext': 'Sec. PV'}
 #%%
 def get_obj(algo):
     if 'cost' in algo:
@@ -112,6 +112,14 @@ for g_name in groups.keys():
         for a in algos:
             algos_specs[a]['Method'] = g_name
 
+objectives_n = ['Objective: Cost','Objective: Peak Shaving', 'Objective: PV']
+Objectives = {o: groups[o] for o in objectives_n }
+
+metrics_to_algos = {}
+metrics_to_algos['Cost'] = groups['Objective: Cost']
+metrics_to_algos['self_cons'] = groups['Objective: PV']
+metrics_to_algos['peak_factor'] = groups['Objective: Peak Shaving']
+metrics_to_algos['share_PV_ext'] = groups['Objective: PV']
 #%% Functions
 def quick_stats(decisions, spot_prices):
     
@@ -198,17 +206,7 @@ def adjust(s):
     if ' ' in s:
         s = s.replace(' ', '\n')
     return s    
-#%%
-# metrics = ['share_PV','share_PV_ext', 'soc_dep', 'Cost', 'peak_factor']
-# metrics_title = ['PV share', 'PV share extended','SOC at Departure', 'Median Cost', '$ARP$' ]
-# metrics_unit = ['%','%','%', 'CHF','%']
-# metrics_props = {metrics[i]: {'title': metrics_title[i],'unit': metrics_unit[i]} for i in range(len(metrics))}
 
-# labels_radar = {'share_PV': 'PV',
-#                 'share_PV_ext': 'PV extended',
-#           'Cost': 'Cost',
-#           'peak_factor': 'ARP',
-#           'soc_dep': 'SOC '}
 #%%
 stats = {n: quick_stats(decisions[n],prices_romande_energie) for n in names}
 
@@ -260,16 +258,20 @@ def ax_boxplot_metrics(ax, metric, g, ylim = None, leg = True):
     return ax
 
 #%% box plot metrics
-
+def return_variation(metric,v1g, v2g):
+    
+    s_df = stats_df[metric]
+    
+    df = pd.DataFrame()
+    df['V2X variation'] = 100*(s_df[v2g]/s_df[v1g])-100
+    
+    return df
 
 def ax_boxplot_metrics_variation(ax, metric, v1g, v2g):
     # fig, axes = plt.subplots(len(metrics),1, sharex = True, figsize=(25,16))
     algos = groups[g]
 
-    s_df = stats_df[metric]
-    
-    df = pd.DataFrame()
-    df['V2X variation'] = 100*(s_df[v2g]/s_df[v1g])-100
+    df = return_variation(metric, v1g, v2g)
 
     # sns.boxplot(data = df, ax = axes[i], orient = 'v', palette = [color_codes[n] for n in names])
     sns.boxplot(data = df, ax = ax, palette = [color_codes[n] for n in algos])
@@ -348,6 +350,7 @@ def ax_radar(ax, g, x_legend = 0.5, y_legend = -0.5, start = np.pi/4, leg = True
 
     ax.set_xlabel('%', fontsize = 18)
     ax.set_ylim([0,105])
+    ax.set_title(g)
     
     return ax
 
@@ -377,7 +380,7 @@ def ax_radar_by_metrics(ax, g, x_legend = 0.5, y_legend = -0.2, start = np.pi/4,
     
     
         ax.plot(angles, vals_med, 'o-',  label = labels_radar[m])
-        
+
         ax.set_thetagrids(angles[:-1] * 180/np.pi, [adjust(algos_specs[a][s]) for a in algos],fontsize = 16)
         
     
@@ -386,7 +389,47 @@ def ax_radar_by_metrics(ax, g, x_legend = 0.5, y_legend = -0.2, start = np.pi/4,
         ax.legend(loc = 'lower center',bbox_to_anchor=(x_legend,y_legend), ncol = 1, fontsize = 14)
     ax.set_xlabel('%', fontsize = 18)
     ax.set_ylim([0,105])
-    ax.set_title(g, fontsize = 18)
+    
+    return ax
+
+#%%
+def ax_radar_by_metrics_v2x(ax, x_legend = 0.5, y_legend = -0.2, start = np.pi/4, leg = True):
+    
+    angles=np.linspace(start, 2*np.pi+ start, len(metrics_to_algos.keys()), endpoint=False)
+    angles=np.concatenate((angles,[angles[0]]))
+    
+    vals_med = []
+    obj = []
+    for m in metrics_to_algos:
+        algos = metrics_to_algos[m]
+
+        for a in algos:
+            if algos_specs[a]['Method'] == 'V1X':
+                v1g = a
+            else:
+                v2g = a
+
+       
+        obj.append(labels_radar[m])
+        
+        med =  return_variation(m,v1g, v2g).mean()[0]
+        
+        if m == 'Cost':
+            vals_med.append(-med)
+        
+        else:
+            vals_med.append(med)
+
+    vals_med=np.concatenate((vals_med,[vals_med[0]]))
+
+    
+    ax.plot(angles, vals_med, 'o-')
+    ax.fill(angles, vals_med, alpha=0.25)
+    ax.set_thetagrids(angles[:-1] * 180/np.pi, obj,fontsize = 16)
+    
+    
+    ax.grid(True)
+    ax.set_xlabel('%', fontsize = 18)
     
     return ax
 #%%
@@ -530,6 +573,13 @@ for i, g in enumerate(groups.keys()):
         continue
 ax_boxplot_metrics_variation(axes[-1],'share_PV_ext',v1g,v2g)
 fig.show()
+fig = plt.figure(figsize=(16, 9), dpi = 800)
+plt.title(None)       
+ax1 = fig.add_subplot(1,1,1, polar = True)
+ax_radar_by_metrics_v2x(ax1)
+fig.show()
+
+
 #%%
 for g in groups.keys():
     if 'Objective' in g:
@@ -541,7 +591,7 @@ for g in groups.keys():
                 v1g = a
             else:
                 v2g = a
-        fig = plt.figure(figsize=(16, 9), dpi = 600)
+        fig = plt.figure(figsize=(16, 9), dpi = 800)
         plt.suptitle(g, fontsize = 18)
         ax1 = fig.add_subplot(1,3,1, polar = True)
         ax_radar(ax1, g, leg = False)

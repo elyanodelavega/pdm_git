@@ -11,7 +11,7 @@ import numpy as np
 def run_MPC_save(method_name, episode, model, decisions_0,
             Load_model_forecast, PV_model_forecast, PV_LSTM,
             opti_method, opti_parameters,objective_1,
-            n_hour_future, t_left, soc_penalty, lambda_soc = 0.5):
+            n_hour_future, t_left, soc_penalty, lambda_soc = 0.5, num_iter = 20):
     #MPC stochastic Expected
     e = episode.episode[0]
     episode_length = len(episode)
@@ -53,7 +53,7 @@ def run_MPC_save(method_name, episode, model, decisions_0,
         
         Load_predictions = Load_model_forecast.predict(t_forecast, t_end)
         PV_predictions = PV_model_forecast.predict_distribution(model = PV_LSTM, time = t_forecast,
-                                                            dropout = 0.35, dataframe = True)
+                                                            dropout = 0.35, dataframe = True, num_iter = num_iter)
 
         model.optimize(t_decision, t_end, PV_predictions, Load_predictions, forecasting = True, 
                        method = opti_method, parameters = opti_parameters,objective_1 = objective_1, 
@@ -84,7 +84,7 @@ def run_MPC_save(method_name, episode, model, decisions_0,
 def run_MPC(method_name, episode, model, decisions_0,
             Load_model_forecast, PV_model_forecast, PV_LSTM,
             opti_method, opti_parameters,objective_1,
-            n_hour_future, t_left, soc_penalty, lambda_soc = 0.5):
+            n_hour_future, t_left, soc_penalty, lambda_soc = 0.5, num_iter = 20):
     #MPC stochastic Expected
 
     episode_length = len(episode)
@@ -104,7 +104,7 @@ def run_MPC(method_name, episode, model, decisions_0,
             
         perc = int(100* t /episode_length)
         print('\n -------------------------')
-        print(f'Episode {e}, {method_name}')
+        print(f'Episode {e}, {method_name} {objective_1}')
         print(f'Estimated time remaining: {update}s')
         print(f'Episode progress: {perc}%')
         print('\n -------------------------')
@@ -114,7 +114,7 @@ def run_MPC(method_name, episode, model, decisions_0,
         Load_predictions = Load_model_forecast.predict(t_forecast, t_end)
         if stochastic:
             PV_predictions = PV_model_forecast.predict_distribution(model = PV_LSTM, time = t_forecast,
-                                                                dropout = 0.35, dataframe = True)
+                                                                dropout = 0.35, dataframe = True, num_iter = num_iter)
         else:
             PV_predictions = PV_model_forecast.predict(model = PV_LSTM, time = t_forecast, dataframe = True)
             

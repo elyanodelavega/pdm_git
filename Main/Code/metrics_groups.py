@@ -16,43 +16,37 @@ from df_prepare import  prices_romande_energie
 
 folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/Full/'
 
-
+sns.set_style('whitegrid')
 
 #%% DEFINITION
-palette = sns.color_palette()
+objectives = ['cost', 'pv', 'peak']
+methods_short = ['opti', 'mpc_d', 'mpc_s', 'mpc_s_cvar']
+palette = sns.color_palette(n_colors = len(objectives)*len(methods_short) + 4)
+
+color_codes = {}
+c = 0
+for  o in objectives:
+    for m in methods_short:
+        
+        name = f'v2g_{m}_{o}'
+        color_codes[name] = palette[c]
+        c += 1
 
 
-color_codes = {'v2g_opti_cost':palette[0],
-                'v2g_mpc_d_cost':palette[1],
-                'v2g_mpc_s_cost':palette[2],
-                'v2g_mpc_s_cvar_soc_cost':palette[3],
-                'v2g_opti_peak': palette[5],
-                'v2g_mpc_d_peak': palette[6],
-                'v2g_opti_pv':palette[7],
-                'v2g_mpc_d_pv':palette[8],
-                'v2g_mpc_s_pv':palette[9],
-                'v2g_mpc_s_cvar_soc_pv':palette[4]}
 
-# color_codes = {'opti_cost':palette[0],
-#                 'mpc_d_cost':palette[1],
-#                 'mpc_s_cost':palette[2],
-#                 'mpc_s_cvar_soc_cost':palette[3],
-#                 'opti_peak': palette[5],
-#                 'mpc_d_peak': palette[6],
-#                 'opti_pv':palette[7],
-#                 'mpc_d_pv':palette[8],
-#                 'mpc_s_pv':palette[9],
-#                 'mpc_s_cvar_soc_pv':palette[4]}
-
-methods = ['Perfect Foresight  \nExp: Cost \nExp: SOC',  'MPC deterministic \nExp: Cost \nExp: SOC', 
+methods = ['Perfect Foresight  \nCost', 
+           'MPC deterministic \nCost', 
            'MPC stochastic \nExp: Cost \nExp: SOC', 
-           'MPC stochastic \nExp: Cost, \nCVaR 75%: SOC',
-            'Perfect Foresight \nExp: Peak Shaving \nExp: SOC',
-            'MPC deterministic \nExp: Peak Shaving \nExp: SOC',
-            'Perfect Foresight \nExp: PV \nExp: SOC',
-            'MPC deterministic \nExp: PV \nExp: SOC', 
-            'MPC stochastic \nExp: PV \nExp: SOC', 
-            'MPC stochastic \nExp: PV, \nCVaR 75%: SOC ']
+           'MPC stochastic \nCVaR: Cost, \nExp: SOC',
+            'Perfect Foresight  \nPV ', 
+           'MPC deterministic \nPV', 
+           'MPC stochastic \nExp: PV \nExp: SOC', 
+           'MPC stochastic \nCVaR: PV, \nExp: SOC',
+           'Perfect Foresight  \nAPR', 
+           'MPC deterministic \nAPR ', 
+           'MPC stochastic \nExp: APR \nExp: SOC', 
+           'MPC stochastic \nCVaR: APR, \nExp: SOC']
+
 
 # import random
 
@@ -62,6 +56,8 @@ methods = ['Perfect Foresight  \nExp: Cost \nExp: SOC',  'MPC deterministic \nEx
 # methods = [f'SOC weight {i}' for j,i in enumerate(np.arange(0,1.1, 0.1))]
 
 names = list(color_codes.keys())
+methods_aglo = {methods[i]: names[i]
+                  for i in range(len(names))}
 
 csv_code = '.csv'
 decisions = {n: pd.read_csv(folder_path+'results_'+n+csv_code, index_col = 0) for n in names}
@@ -346,12 +342,12 @@ def ax_radar_by_metrics(ax, g, x_legend = 0.5, y_legend = -0.2, start = np.pi/4,
     
     return ax
 #%%
-colors = sns.color_palette()
 
-color_indices = {'Grid': colors[0],
-                  'PV': colors[1],
-                  'EV': colors[2],
-                  'Load': colors[3]}
+
+color_indices = {'Grid': palette[12],
+                  'PV': palette[13],
+                  'EV': palette[14],
+                  'Load': palette[15]}
 def plot_repartition(ax, decisions, g, variable, indices, labels, name = None, width = 0.6):
     
     algos = groups[g]
@@ -388,6 +384,7 @@ def plot_repartition(ax, decisions, g, variable, indices, labels, name = None, w
     ax.set_xticks(x)
     ax.set_xticklabels([adjust(algos_specs[n][s]) for n in algos])
     ax.set_ylabel('%')
+    ax.set_ylim([0,100])
     ax.set_title(f'{name.upper()}')
     ax.grid(True)
 
@@ -467,55 +464,77 @@ def ax_pv_repartition(ax, g):
 
 
 #%%
-for g in groups.keys():
-    algos = groups[g]
-    fig = plt.figure(figsize=(22, 12))
-    plt.suptitle(g, fontsize = 18)
-    ax1 = fig.add_subplot(1,4,1, polar = True)
-    ax_radar(ax1, g, leg = False)
-    
-    
-    ax3= fig.add_subplot(4,4,2)
-    ax4= fig.add_subplot(4,4,6)
-    ax5= fig.add_subplot(4,4,10)
-    ax6= fig.add_subplot(4,4,14)
-    
-    ax_box = [ax3, ax4, ax5, ax6]
-    
-    for i in range(len(ax_box)):
-        m = metrics[i]
-        ax = ax_box[i]
-        ax_boxplot_metrics(ax, m, g, ylim = metrics_ylim[m], leg = False)
+full_plot = False
+if full_plot:
+    for g in groups.keys():
+        algos = groups[g]
+        fig = plt.figure(figsize=(28, 15), dpi = 500)
+        plt.suptitle(g, fontsize = 18)
+        ax1 = fig.add_subplot(1,4,1, polar = True)
+        ax_radar(ax1, g, leg = False)
         
-    patches1 = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in algos]
-    ax1.legend(handles=patches1, loc='lower center',ncol=int(len(algos)/2), bbox_to_anchor = (0.5,-0.8)) 
-    
-    
-    ax7= fig.add_subplot(2,4,3)
-    ax8= fig.add_subplot(2,4,7)
-    ax9= fig.add_subplot(2,4,4)
-    ax10= fig.add_subplot(2,4,8)
-    
-    ax_ev_charge(ax7, g)
         
-    ax_ev_discharge(ax9, g)
+        ax3= fig.add_subplot(4,4,2)
+        ax4= fig.add_subplot(4,4,6)
+        ax5= fig.add_subplot(4,4,10)
+        ax6= fig.add_subplot(4,4,14)
+        
+        ax_box = [ax3, ax4, ax5, ax6]
+        
+        for i in range(len(ax_box)):
+            m = metrics[i]
+            ax = ax_box[i]
+            ax_boxplot_metrics(ax, m, g, ylim = metrics_ylim[m], leg = False)
+            
+        patches1 = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in algos]
+        ax1.legend(handles=patches1, loc='lower center',ncol=int(len(algos)/2), bbox_to_anchor = (0.5,-0.8)) 
+        
+        
+        ax7= fig.add_subplot(2,4,3)
+        ax8= fig.add_subplot(2,4,7)
+        ax9= fig.add_subplot(2,4,4)
+        ax10= fig.add_subplot(2,4,8)
+        
+        ax_ev_charge(ax7, g)
+            
+        ax_ev_discharge(ax9, g)
+        
+        
+        ax_load_repartition(ax8, g)
+        
+        ax_pv_repartition(ax10, g)
+        
+        patches = [mpatches.Patch(color=color_indices[labels_tot[i]], label= labels_tot[i]) for i in range(len(labels_tot))]
     
-    
-    ax_load_repartition(ax8, g)
-    
-    ax_pv_repartition(ax10, g)
-    
-    patches = [mpatches.Patch(color=color_indices[labels_tot[i]], label= labels_tot[i]) for i in range(len(labels_tot))]
+        fig.legend(handles=patches, loc='upper right', bbox_to_anchor = (0.8, 0.95), ncol = 4)
+        
+        fig.show()
 
-    fig.legend(handles=patches, loc='upper right', bbox_to_anchor = (0.8, 0.95), ncol = 4)
-    
-    fig.show()
-    
 #%%
-variables = ['pv_ev','pv_load','grid_ev','grid_load','ev_grid','y_buy','y_sell','y_ch','y_dis','avail','cost','self_cons','peak_factor']
 
-for s in stats:
-    c = stats[s][variables].corr()
-    plt.figure(figsize = (16,9))
-    plt.title(s)
-    sns.heatmap(c.loc[:,['cost','self_cons','peak_factor']], annot=True)
+import pickle
+time_algo = {}
+for i, o in enumerate(objectives):
+    for j, m in enumerate(methods_short):
+        name = f'{m}_{o}'
+        file_name = f'time_{name}'
+        algo = f'v2g_{name}'
+        file_inter = open(folder_path+file_name+'.pickle', 'rb')
+        time_algo[algorithms[algo]] = pickle.load(file_inter)[:60]
+        file_inter.close()
+        
+#%%
+df_time = pd.DataFrame.from_dict(time_algo)
+fig, ax = plt.subplots(1,1,figsize = (16,9), dpi = 500)
+sns.boxplot(data = df_time, ax = ax, palette = [color_codes[methods_aglo[n]] for n in methods])
+ax.set_ylabel('seconds')
+ax.grid(True)
+
+#%%
+# variables = ['pv_ev','pv_load','grid_ev','grid_load','ev_grid','y_buy','y_sell','y_ch','y_dis','avail','cost','self_cons','peak_factor']
+
+# for s in stats:
+#     c = stats[s][variables].corr()
+#     plt.figure(figsize = (16,9))
+#     plt.title(s)
+#     sns.heatmap(c.loc[:,['cost','self_cons','peak_factor']], annot=True)

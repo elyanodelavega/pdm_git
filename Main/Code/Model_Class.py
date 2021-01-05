@@ -346,26 +346,36 @@ class Model:
         self.add_second_stage_variables()
         self.add_second_stage_constraints()
         
-        cost_decision = self.P_grid_bought_1* self.buy_spot_price[self.t_decision] - self.P_grid_sold_1* self.sell_spot_price[self.t_decision]
-        cost_forecast = np.sum([(self.P_grid_bought[t,i] * self.buy_spot_price[t] - self.P_grid_sold[t,i] * self.sell_spot_price[t]) for t in self.time_horizon for i in self.range_samples])  
         
         PV_consumed_decision = self.P_PV_2EV_1 + self.P_PV_2L_1
+        PV_decision = self.realization_PV
         
+        if PV_decision > 0:
+            self_cons_d = PV_consumed_decision/PV_decision
+        else:
+            self_cons_d = 0
             
-        PV_consumed_forecast = np.sum([(self.P_PV_2EV[t,i] + self.P_PV_2L[t,i]) for t in self.time_horizon for i in self.range_samples])
-        PV_total_forecast = self.predictions_PV.sum().sum()
         
-        PV_grid_1 = self.P_PV_2G_1
-        PV_grid = gp.quicksum(self.P_PV_2G)
         
         SOC_difference =  gp.quicksum([self.SOC_min_departure - self.SOC[self.t_end,i] for i in self.range_samples])
         
-
+        objective = {}
         
         if 'pv'  in [objective_1, objective_2] :
+            # PV_consumed_forecast = [np.sum([(self.P_PV_2EV[t,i] + self.P_PV_2L[t,i]) for t in self.time_horizon]) for i in self.range_samples]
+            # PV_total_forecast = [self.predictions_PV.sum()[i] for i in self.range_samples]
             
-            penalty = 1
+            # self_cons = np.sum([PV_consumed_forecast[i]/PV_total_forecast[i] for i in self.range_samples])
+            
+            PV_grid_1 = self.P_PV_2G_1
+            PV_grid = gp.quicksum(self.P_PV_2G)
+            
+            penalty = self.BC_EV
             self.m.Params.MIPGap = 1e-2
+            
+            decision = PV_grid_1
+            future = PV_grid
+            
             
         elif 'peak' in [objective_1, objective_2]:
             
@@ -377,41 +387,46 @@ class Model:
             
             penalty = self.BC_EV
             self.m.Params.MIPGap = 1e-2
-        else:
+            
+            decision = 0
+            future = gp.quicksum(self.z_apr)
+        elif 'cost' in [objective_1, objective_2]:
+            cost_decision = self.P_grid_bought_1* self.buy_spot_price[self.t_decision] - self.P_grid_sold_1* self.sell_spot_price[self.t_decision]
+            cost_forecast = gp.quicksum([(self.P_grid_bought[t,i] * self.buy_spot_price[t] - self.P_grid_sold[t,i] * self.sell_spot_price[t]) for t in self.time_horizon for i in self.range_samples])  
+        
             penalty = soc_penalty * self.buy_spot_price[self.t_departure]*self.BC_EV
             
+            decision = cost_decision
+            future = cost_forecast
             
         Power_difference = penalty * SOC_difference
+        objective['soc'] = Power_difference/self.n_samples
         
         lambda_main = 1 - lambda_soc
         
-        objective = {}
         
         if  method == 'deterministic' or method == 'day_ahead' or method == 'expected value':
-            objective['cost'] = cost_decision + cost_forecast/self.n_samples 
-            objective['soc'] = Power_difference/self.n_samples
-            #objective['pv'] = -(PV_consumed_decision + (PV_consumed_forecast)/self.n_samples)/(PV_total_forecast/self.n_samples + self.realization_PV)
-            objective['pv'] = PV_grid_1 + PV_grid/self.n_samples
+            objective[objective_1] = decision + future/self.n_samples
+            # objective['cost'] = cost_decision + cost_forecast/self.n_samples 
+            # objective['soc'] = Power_difference/self.n_samples
+            # objective['pv'] = PV_grid_1 + PV_grid/self.n_samples
+            # #objective['pv'] = (1 - self_cons_d) + (1 - self_cons/self.n_samples)
             
-            if 'peak' in [objective_1, objective_2]: 
-                objective['peak'] = gp.quicksum(self.z_apr) / self.n_samples
+            # if 'peak' in [objective_1, objective_2]: 
+            #     objective['peak'] = gp.quicksum(self.z_apr) / self.n_samples
             
-        elif method == 'CVaR':
-            alpha = parameters['alpha']
-            objective = cost_decision + cost_forecast/((1-alpha)*self.n_samples) + Power_difference/((1-alpha)*self.n_samples)
-            
+
         elif method == 'Markowitz':
             alpha_obj1 = parameters['alpha_obj1']
-            alpha_soc = parameters['alpha_soc']
+            objective[objective_1] = decision + future/((1-alpha_obj1)*self.n_samples) 
+            # objective['cost'] = (cost_decision +  cost_forecast/((1-alpha_obj1)*self.n_samples)) 
+            # objective['soc'] =  Power_difference/((1-alpha_soc)*self.n_samples)
+            # objective['pv'] =  PV_grid_1 + PV_grid/((1-alpha_obj1)*self.n_samples)
+            # #objective['pv'] = (1 - self_cons_d) + (1 - self_cons/ ((1-alpha_obj1)*self.n_samples))
+            # if 'peak' in [objective_1, objective_2]: 
+            #     objective['peak'] = gp.quicksum(self.z_apr) / ((1-alpha_obj1)*self.n_samples)
             
-            objective['cost'] = (cost_decision +  cost_forecast/((1-alpha_obj1)*self.n_samples)) 
-            objective['soc'] =  Power_difference/((1-alpha_soc)*self.n_samples)
-            #objective['pv'] =  -(PV_consumed_decision + (PV_consumed_forecast)/((1-alpha_obj1)*self.n_samples))/(self.realization_PV + PV_total_forecast/((1-alpha_obj1)*self.n_samples))
-            objective['pv'] = PV_grid_1 + PV_grid/((1-alpha_soc)*self.n_samples)
-            if 'peak' in [objective_1, objective_2]: 
-                objective['peak'] = gp.quicksum(self.z_apr) / ((1-alpha_soc)*self.n_samples)
-            
-        self.m.setObjective(lambda_main * objective[objective_1] + lambda_soc* objective[objective_2])
+        self.m.setObjective(lambda_main * objective[objective_1] + lambda_soc* objective['soc'])
 
             
         self.m.optimize()

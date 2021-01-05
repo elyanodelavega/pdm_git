@@ -16,12 +16,9 @@ import time
 
 import numpy as np
 import pandas as pd
-import random
-import os
 
-from to_video import to_video
-from df_prepare import data_PV_csv, data_EV_csv, data_spot_market_csv, prices_romande_energie
-from keras.models import load_model
+from df_prepare import data_PV_csv, data_EV_csv
+from df_prepare import data_spot_market_csv, prices_romande_energie
 
 #%%
 img_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/Images/'
@@ -36,16 +33,6 @@ data_EV = data_EV_csv(folder_path +EV_csv)
 SM_csv = 'spot_market.csv'
 spot_prices = data_spot_market_csv(folder_path +SM_csv)
 
-def time_prevision(time_algo, methods_left, episodes_left):
-    average_time_per_episode_all = np.sum([np.mean(time_algo[k]) for k in time_algo.keys()])
-    
-    rest_episodes_full = average_time_per_episode_all*episodes_left
-    
-    average_time_per_episode_methods = np.sum(np.mean(time_algo[k]) for k in methods_left)
-    
-    time_left = rest_episodes_full + average_time_per_episode_all
-    
-    return int(time_left)
 
 #%%
 def time_prevision_method(time_algo, method, episodes_left):
@@ -92,19 +79,29 @@ PV_model_forecast = Forecast_LSTM(pred_variable = pred_variable, data = data_PV,
 PV_model_forecast.build_LSTM(epochs = 50, dropout = 0.1, plot_results=True)
 PV_LSTM = PV_model_forecast.LSTM_model
 
-#%% Evaluate dropout
-from plot_res import plot_dropout_results
-evaluate = False
-dropouts = [0.25,0.3,0.35,0.4,0.5, 0.6, 0.7, 0.8]
-model = PV_LSTM
-test_days = 10
-idx = 130
-n_iter = 20
 
-if evaluate:
-    pred,pred_dropout = PV_model_forecast.uncertainty_evaluation(model,test_days,idx,dropouts,n_iter)
+
+#%%
+pred_variable = 'load'
+
+Load_model_forecast = Forecast_ARIMA(data_EV, pred_variable = pred_variable)
+#%% Evaluate dropout
+
+from plot_res import plot_dropout_results
+evaluate_dropouts = False
+if evaluate_dropouts:
+    evaluate = False
+    dropouts = [0.25,0.3,0.35,0.4,0.5, 0.6, 0.7, 0.8]
+    model = PV_LSTM
+    test_days = 10
+    idx = 130
+    n_iter = 20
     
-    plot_dropout_results(data_PV_train,pred_variable, pred, pred_dropout, n_hour_future, plot_cumulative = True, plot_boxplot = True, boxplot_dropouts = [0.35])
+    if evaluate:
+        pred,pred_dropout = PV_model_forecast.uncertainty_evaluation(model,test_days,idx,dropouts,n_iter)
+        
+        plot_dropout_results(data_PV_train,pred_variable, pred, pred_dropout, n_hour_future, 
+                             plot_cumulative = True, plot_boxplot = True, boxplot_dropouts = [0.35])
 #%%
 idx_start = 129
 t_start = data_EV.index[idx_start]
@@ -126,13 +123,9 @@ plt.plot(range(2*s,len(PV_predictions)+2*s),PV_predictions/1000,'-.', label = 's
 plt.xticks(ticks,labels)
 plt.legend()
 plt.show()
-#%%
-pred_variable = 'load'
-
-Load_model_forecast = Forecast_ARIMA(data_EV, pred_variable = pred_variable)
 
 #%%
-plot_load_forecast = True
+plot_load_forecast = False
 idx = 500
 t_forecast = data_EV.index[idx]
 t_d = data_EV.index[idx-1]
@@ -172,8 +165,9 @@ warnings.filterwarnings('ignore', 'statsmodels.tsa.arima_model.ARIMA',
                         FutureWarning)
 
 warnings.filterwarnings("ignore")
+
 #%% Optimization
-    
+MPC_opti = True  
 
 
 res_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/'
@@ -184,185 +178,21 @@ columns = ['pv', 'load', 'pv_ev', 'pv_load','pv_grid', 'grid_ev', 'grid_load','e
             'y_sell','y_ch','y_dis','soc',
         'avail', 'episode']
 
-lambda_soc = {'cost': 0.44,
-              'pv': 0.02,
+lambda_soc = {'cost': 0.46,
+              'pv': 0.003,
               'peak': 0.23}
-################################### PARAMETERS ########################################
-V2X = 1
-semi_dynamic_pricing = True
-save_mode = True
-objective_1 = 'pv'
-speciality = '_'+objective_1
-soc_penalty = 1.2
 
-
-
-if semi_dynamic_pricing:
-    spot_prices = prices_romande_energie(data_EV)[['buy','sell']]
-    
-EV1 = EV(eta_EV_ch = 0.95,SOC_min_departure = 1)
-House1 = House()
-
-
-episode_start = 1
-n_episodes = 60
-
-range_episodes = range(episode_start, episode_start + n_episodes)
-
-MPC_methods = ['4. MPC deterministic',
-                '5. MPC stochastic',
-                  '8. MPC stochastic CVaR soc']
-
-MPC_methods = ['4. MPC deterministic']
-
-          
-################################## NAMES #############################################
-names = ['opti', 'mpc_d', 'mpc_s', 'mpc_s_cvar_cost', 'mpc_s_cvar_soc']
-
-if V2X:
-    names = ['v2g_'+n for n in names]
-
-else:
-    prefix = ''
-
-methods = ['1. Fully deterministic',  '4. MPC deterministic', 
-            '5. MPC stochastic', '7. MPC stochastic CVaR obj1',
-            '8. MPC stochastic CVaR soc']
-
-algorithms = {methods[i]:names[i]  for i in range(len(names))}
-
-
-
-MPC_opti_methods = {'4. MPC deterministic': 'deterministic', '5. MPC stochastic': 'expected value',
-                  '6. MPC stochastic CVaR': 'CVaR','7. MPC stochastic CVaR obj1': 'Markowitz', 
-                  '8. MPC stochastic CVaR soc': 'Markowitz' }
-
-MPC_parameters = {'4. MPC deterministic': None, '5. MPC stochastic': None,
-                  '6. MPC stochastic CVaR': {'alpha': 0.75},
-                  '7. MPC stochastic CVaR obj1':{'alpha_obj1': 0.75,
-                                                  'alpha_soc': 0},
-                  '8. MPC stochastic CVaR soc':{'alpha_obj1': 0,
-                                                  'alpha_soc': 0.75}}
-
-time_algo = {m:[] for m in methods}
-
-
-for i,m in enumerate(MPC_methods):
-    
-    name = algorithms[m]
-    
-    predictions_load = {e: None for e in range_episodes}
-    
-    predictions_PV = {e: None for e in range_episodes}
-    
-    MPC_results = {e: None for e in range_episodes}
-
-
-    for e in range_episodes:
-    
-        episode = data_EV[data_EV.episode == e]
-        t_start_episode = episode.index[0]
-        t_end_episode = episode.index[-1]
-        episode_length = episode.shape[0]
-        
-        
-        # Full deterministic
-        start_0 = time.time()
-        model_0 = Model( data_EV = data_EV, t_start = t_start_episode, 
-                  t_res = t_res,  EV = EV1, House = House1, spot_prices = spot_prices, V2X = V2X)
-        t_decision = t_start_episode
-        t_forecast = episode.index[1]
-        PV_predictions_0 = episode.loc[t_forecast:t_end_episode,'PV'].to_frame()
-        Load_predictions_0 = episode.loc[t_forecast:t_end_episode,'load'].to_frame()
-        model_0.optimize(t_decision, t_end_episode, PV_predictions_0,Load_predictions_0, 
-                          objective_1 = objective_1, forecasting = False, method = 'deterministic',
-                          soc_penalty = soc_penalty, lambda_soc = lambda_soc[objective_1])
-        decisions_0 = model_0.results_deterministic()
-        
-
-        end_0 = time.time()
-        total_ep_0 = end_0 -start_0
-        time_algo['1. Fully deterministic'].append(total_ep_0)
-        
-        
-        if e > episode_start:
-            t_left = time_prevision_method(time_algo, m, episode_start + n_episodes -e)
-        else:
-            t_left = 'unknown'
-        start = time.time()
-        model = Model(data_EV = data_EV, t_start = t_start_episode, 
-              t_res = t_res,  EV = EV1, House = House1, spot_prices = spot_prices, V2X = V2X)
-        
-        opti_method = MPC_opti_methods[m]
-        opti_parameters = MPC_parameters[m]
-        
-        if save_mode:
-            decisions, MPC_results[e], predictions_load[e], predictions_PV[e] = run_MPC_save(m, episode, model, decisions_0,
-                                                                                                Load_model_forecast, PV_model_forecast, PV_LSTM,
-                                                                                                opti_method, opti_parameters,
-                                                                                                n_hour_future,t_left)
-                                                                                             
-        else:
-            decisions = run_MPC(m, episode, model, decisions_0, Load_model_forecast, PV_model_forecast, PV_LSTM,
-                                                                                                    opti_method, opti_parameters, objective_1, 
-                                                                                                    n_hour_future,t_left, soc_penalty, lambda_soc = lambda_soc[objective_1])
-            
-            
-            
-        end = time.time()
-        total_ep = end - start
-        time_algo[m].append(total_ep)                                                                                         
-
-
-        if e == episode_start:
-            
-            results = decisions.copy()
-
-        else:
-            
-            results = results.append(decisions)
-        
-        if e == 25 or e == 50:
-            results.to_csv(res_folder_path+f'backup_{e}_{name}{speciality}.csv')
-    
-    
-    results.to_csv(res_folder_path+f'results_{name}{speciality}.csv')
-    
-    if save_mode:
-        intermediate_results = {'PV forecast': predictions_PV,
-                                'Load forecast': predictions_load,
-                                'Decisions': MPC_results}
-    
-        file_inter = open(res_folder_path+f'Intermediate_results_{name}_{e}.pickle', 'wb') 
-        pickle.dump(intermediate_results, file_inter)
-        file_inter.close()
-
-#%% Optimization Fully Deterministic
-    
-from Model_Class import EV, House, Model
-from MPC import run_MPC, run_MPC_save
-import pickle
-import time
-
-res_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/'
-
-t_res = PV_model_forecast.t_res
-save = 0
-columns = ['pv', 'load', 'pv_ev', 'pv_load','pv_grid', 'grid_ev', 'grid_load','ev_load','ev_grid','y_buy',
-            'y_sell','y_ch','y_dis','soc',
-        'avail', 'episode']
-
-lambda_soc = {'cost': 0.6,
-              'pv': 0.5,
-              'peak': 0.8}
 ################################### PARAMETERS ########################################
 V2X = 1
 semi_dynamic_pricing = True
 save_mode = False
-objective_1 = 'peak'
-speciality = '_'+objective_1
 soc_penalty = 1.2
-lambda_soc = {objective_1: np.arange(0.25,0.3,0.02)}
+num_iter = 12
+
+objective_1 = 'cost'
+speciality = '_'+objective_1
+
+
 
 
 if semi_dynamic_pricing:
@@ -377,46 +207,34 @@ n_episodes = 60
 
 range_episodes = range(episode_start, episode_start + n_episodes)
 
-MPC_methods = ['4. MPC deterministic',
-                '5. MPC stochastic',
-                  '8. MPC stochastic CVaR soc']
 
 
-MPC_methods = ['4. MPC deterministic']
-               
+          
 ################################## NAMES #############################################
-names = ['opti', 'mpc_d', 'mpc_s', 'mpc_s_cvar_cost', 'mpc_s_cvar_soc']
+names = ['opti', 'mpc_d', 'mpc_s',  'mpc_s_cvar']
+MPC_methods = ['mpc_d', 'mpc_s', 'mpc_s_cvar']
 
 if V2X:
     names = ['v2g_'+n for n in names]
-
+    prefix = 'v2g_'
 else:
     prefix = ''
 
-methods = ['1. Fully deterministic',  '4. MPC deterministic', 
-            '5. MPC stochastic', '7. MPC stochastic CVaR obj1',
-            '8. MPC stochastic CVaR soc']
 
-algorithms = {methods[i]:names[i]  for i in range(len(names))}
+MPC_opti_methods = {'mpc_d': 'deterministic', 'mpc_s': 'expected value',
+                  'mpc_s_cvar': 'Markowitz'}
 
+MPC_parameters = {'mpc_d': None, 'mpc_s': None,
+                  'mpc_s_cvar':{'alpha_obj1': 0.75,
+                                'alpha_soc': 0}}
 
+time_algo = {m:[] for m in MPC_methods}
 
-MPC_opti_methods = {'4. MPC deterministic': 'deterministic', '5. MPC stochastic': 'expected value',
-                  '6. MPC stochastic CVaR': 'CVaR','7. MPC stochastic CVaR obj1': 'Markowitz', 
-                  '8. MPC stochastic CVaR soc': 'Markowitz' }
+if MPC_opti:
 
-MPC_parameters = {'4. MPC deterministic': None, '5. MPC stochastic': None,
-                  '6. MPC stochastic CVaR': {'alpha': 0.75},
-                  '7. MPC stochastic CVaR obj1':{'alpha_obj1': 0.75,
-                                                  'alpha_soc': 0},
-                  '8. MPC stochastic CVaR soc':{'alpha_obj1': 0,
-                                                  'alpha_soc': 0.75}}
-
-time_algo = {m:[] for m in methods}
-
-for l in lambda_soc[objective_1]:
     for i,m in enumerate(MPC_methods):
         
+        name = m
         
         predictions_load = {e: None for e in range_episodes}
         
@@ -442,27 +260,58 @@ for l in lambda_soc[objective_1]:
             PV_predictions_0 = episode.loc[t_forecast:t_end_episode,'PV'].to_frame()
             Load_predictions_0 = episode.loc[t_forecast:t_end_episode,'load'].to_frame()
             model_0.optimize(t_decision, t_end_episode, PV_predictions_0,Load_predictions_0, 
-                              objective_1 = objective_1, forecasting = False, 
-                              method = 'deterministic', soc_penalty = soc_penalty, lambda_soc = l)
+                              objective_1 = objective_1, forecasting = False, method = 'deterministic',
+                              soc_penalty = soc_penalty, lambda_soc = lambda_soc[objective_1])
             decisions_0 = model_0.results_deterministic()
             
     
-            end_0 = time.time()
-            total_ep_0 = end_0 -start_0
-            time_algo['1. Fully deterministic'].append(total_ep_0)
+
             
-                                                                                      
+            
+            if e > episode_start:
+                t_left = time_prevision_method(time_algo, m, episode_start + n_episodes -e)
+            else:
+                t_left = 'unknown'
+            start = time.time()
+            model = Model(data_EV = data_EV, t_start = t_start_episode, 
+                  t_res = t_res,  EV = EV1, House = House1, spot_prices = spot_prices, V2X = V2X)
+            
+            opti_method = MPC_opti_methods[m]
+            opti_parameters = MPC_parameters[m]
+            
+            if save_mode:
+                decisions, MPC_results[e], predictions_load[e], predictions_PV[e] = run_MPC_save(m, episode, model, decisions_0,
+                                                                                                    Load_model_forecast, PV_model_forecast, PV_LSTM,
+                                                                                                    opti_method, opti_parameters,
+                                                                                                    n_hour_future,t_left)
+                                                                                                 
+            else:
+                decisions = run_MPC(m, episode, model, decisions_0, Load_model_forecast, PV_model_forecast, PV_LSTM,
+                                                                                                        opti_method, opti_parameters, objective_1, 
+                                                                                                        n_hour_future,t_left, soc_penalty, 
+                                                                                                        lambda_soc = lambda_soc[objective_1], num_iter = num_iter)
+                
+                
+                
+            end = time.time()
+            total_ep = end - start
+            time_algo[m].append(total_ep)                                                                                         
     
     
             if e == episode_start:
                 
-                results = decisions_0.copy()
+                results = decisions.copy()
     
             else:
                 
-                results = results.append(decisions_0)
+                results = results.append(decisions)
+            
+        
+            results.to_csv(res_folder_path+f'results{prefix}{name}{speciality}.csv')
+            file_inter = open(res_folder_path+f'time_{name}{speciality}.pickle', 'wb') 
+            pickle.dump(time_algo[m], file_inter)
+            file_inter.close()
 
-        results.to_csv(res_folder_path+f'results_opti_{objective_1}_{np.round(l,5)}.csv')
         
         if save_mode:
             intermediate_results = {'PV forecast': predictions_PV,
@@ -472,4 +321,114 @@ for l in lambda_soc[objective_1]:
             file_inter = open(res_folder_path+f'Intermediate_results_{name}_{e}.pickle', 'wb') 
             pickle.dump(intermediate_results, file_inter)
             file_inter.close()
+
+
+#%% Optimization Fully Deterministic
+
+opti = True   
+
+
+res_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/'
+
+lambda_soc = {'cost': 0.46,
+              'pv': 0.003,
+              'peak': 0.23}
+################################### PARAMETERS ########################################
+V2X = 1
+semi_dynamic_pricing = True
+save_mode = False
+objective_1 = 'cost'
+speciality = '_'+objective_1
+soc_penalty = 1.2
+lambda_soc = np.arange(0.3,0.5, 0.02)
+
+
+if semi_dynamic_pricing:
+    spot_prices = prices_romande_energie(data_EV)[['buy','sell']]
+    
+EV1 = EV(eta_EV_ch = 0.95,SOC_min_departure = 1)
+House1 = House()
+
+
+episode_start = 1
+n_episodes = 60
+
+range_episodes = range(episode_start, episode_start + n_episodes)
+
+MPC_methods = ['4. MPC deterministic',
+                '5. MPC stochastic',
+                  '8. MPC stochastic CVaR soc']
+
+
+MPC_methods = ['5. MPC stochastic']
+               
+################################## NAMES #############################################
+names = ['opti', 'mpc_d', 'mpc_s', 'mpc_s_cvar_cost', 'mpc_s_cvar_soc']
+mpc_methods = ['opti']
+
+if V2X:
+    names = ['v2g_'+n for n in names]
+
+else:
+    prefix = ''
+
+
+#time_algo = {m:[] for m in lambda_soc.keys()}
+if opti:
+    for l in lambda_soc:
+        obj = 'peak'
+        objective_1 = obj
+        
+        speciality = '_'+objective_1
+        for i,m in enumerate(mpc_methods):
+            
+            name = m
+            predictions_load = {e: None for e in range_episodes}
+            
+            predictions_PV = {e: None for e in range_episodes}
+            
+            MPC_results = {e: None for e in range_episodes}
+        
+        
+            for e in range_episodes:
+            
+                episode = data_EV[data_EV.episode == e]
+                t_start_episode = episode.index[0]
+                t_end_episode = episode.index[-1]
+                episode_length = episode.shape[0]
+                
+                
+                # Full deterministic
+                start_0 = time.time()
+                model_0 = Model( data_EV = data_EV, t_start = t_start_episode, 
+                          t_res = t_res,  EV = EV1, House = House1, spot_prices = spot_prices, V2X = V2X)
+                t_decision = t_start_episode
+                t_forecast = episode.index[1]
+                PV_predictions_0 = episode.loc[t_forecast:t_end_episode,'PV'].to_frame()
+                Load_predictions_0 = episode.loc[t_forecast:t_end_episode,'load'].to_frame()
+                model_0.optimize(t_decision, t_end_episode, PV_predictions_0,Load_predictions_0, 
+                                  objective_1 = objective_1, forecasting = False, 
+                                  method = 'deterministic', soc_penalty = soc_penalty, lambda_soc = l)
+                decisions_0 = model_0.results_deterministic()
+                
+        
+                end_0 = time.time()
+                total_ep_0 = end_0 -start_0
+                #time_algo[obj].append(total_ep_0)
+                
+                                                                                          
+                if e == episode_start:
+                    
+                    results = decisions_0.copy()
+        
+                else:
+                    
+                    results = results.append(decisions_0)
+            results.to_csv(res_folder_path+f'results_v2g_{name}{speciality}_{np.round(l,5)}.csv')
+            # file_inter = open(res_folder_path+f'time_{name}{speciality}.pickle', 'wb') 
+            # pickle.dump(time_algo[obj], file_inter)
+            # file_inter.close()
+                    
+            
+
 #%%

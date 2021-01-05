@@ -42,7 +42,7 @@ color_codes = {'v2g_opti_cost':palette[0],
                 'v2g_mpc_s_cvar_soc_pv':palette[4]}
 
 
-folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/'
+folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/weights/'
 
 
 from df_prepare import data_PV_csv, data_EV_csv, data_spot_market_csv, prices_romande_energie
@@ -158,16 +158,16 @@ methods = ['Perfect Foresight  \nExp: Cost \nExp: SOC',  'MPC deterministic \nEx
             'MPC stochastic \nExp: PV, \nCVaR 75%: SOC ']
 
 import random
-range_w = np.arange(0.15,0.3,0.02)
+range_w =  np.arange(0.3,0.5, 0.02)
 obj = 'peak'
 color_codes = {f'opti_{obj}_{np.round(i,5)}': palette[random.randint(0, 9)] for j,i in enumerate(range_w)}
 
-methods = [f'SOC weight {np.round(i,5)}' for j,i in enumerate(range_w)]
+methods = [f'{np.round(i,5)}' for j,i in enumerate(range_w)]
 
 names = list(color_codes.keys())
 
 csv_code = '.csv'
-decisions = {n: pd.read_csv(folder_path+'results_'+n+csv_code, index_col = 0) for n in names}
+decisions = {n: pd.read_csv(folder_path+'results_v2g_'+n+csv_code, index_col = 0) for n in names}
 
 for n in names:
     df = decisions[n][decisions[n].episode < 61]
@@ -197,7 +197,7 @@ metrics_props = {metrics[i]: {'title': metrics_title[i],'label': metrics_label[i
 
 
 #%% box plot variation
-objectives = [ 'peak_factor', 'soc_dep',]
+objectives = ['peak_factor', 'soc_dep',]
 title = metrics_props[objectives[0]]['title']
 fig, axes = plt.subplots(len(objectives),1, figsize=(16,9), sharex = True, dpi = 600)
 plt.suptitle(f' Relative comparison with {methods[0]},{title}')
