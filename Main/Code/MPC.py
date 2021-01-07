@@ -7,6 +7,14 @@ Created on Mon Dec  7 08:26:32 2020
 import time
 import pandas as pd
 import numpy as np
+from scipy import stats
+def remove_outliers(df, z_value = 1.28):
+
+    z=np.abs(stats.zscore(df.mean()))
+    
+    df_clean = df.iloc[:, (z < z_value)]
+    
+    return df_clean
 
 def run_MPC_save(method_name, episode, model, decisions_0,
             Load_model_forecast, PV_model_forecast, PV_LSTM,
@@ -54,6 +62,8 @@ def run_MPC_save(method_name, episode, model, decisions_0,
         Load_predictions = Load_model_forecast.predict(t_forecast, t_end)
         PV_predictions = PV_model_forecast.predict_distribution(model = PV_LSTM, time = t_forecast,
                                                             dropout = 0.35, dataframe = True, num_iter = num_iter)
+        
+        PV_predictions = remove_outliers(PV_predictions)
 
         model.optimize(t_decision, t_end, PV_predictions, Load_predictions, forecasting = True, 
                        method = opti_method, parameters = opti_parameters,objective_1 = objective_1, 
@@ -86,13 +96,13 @@ def run_MPC(method_name, episode, model, decisions_0,
             opti_method, opti_parameters,objective_1,
             n_hour_future, t_left, soc_penalty, lambda_soc = 0.5, num_iter = 20):
     #MPC stochastic Expected
-
+    z_value = 1.28
     episode_length = len(episode)
 
     t_end_episode = episode.index[-1]
     
     e = list(episode.episode)[0]
-    stochastic =  'stochastic' in method_name
+    stochastic =  's' in method_name
         
     for t in range(episode_length-1):
 
@@ -104,25 +114,32 @@ def run_MPC(method_name, episode, model, decisions_0,
             
         perc = int(100* t /episode_length)
         print('\n -------------------------')
-        print(f'Episode {e}, {method_name} {objective_1}')
+        print(f'Episode {e}, {method_name}')
         print(f'Estimated time remaining: {update}s')
         print(f'Episode progress: {perc}%')
         print('\n -------------------------')
         t_forecast = episode.index[t+1]
         t_end = min(t_decision + pd.Timedelta(hours = n_hour_future), t_end_episode)
-        
+        t_start_opti = time.time()
         Load_predictions = Load_model_forecast.predict(t_forecast, t_end)
         if stochastic:
             PV_predictions = PV_model_forecast.predict_distribution(model = PV_LSTM, time = t_forecast,
                                                                 dropout = 0.35, dataframe = True, num_iter = num_iter)
+            PV_predictions = remove_outliers(PV_predictions, z_value)
         else:
             PV_predictions = PV_model_forecast.predict(model = PV_LSTM, time = t_forecast, dataframe = True)
-            
+        
+        
         model.optimize(t_decision, t_end, PV_predictions, Load_predictions, forecasting = True, 
                        method = opti_method, parameters = opti_parameters,objective_1 = objective_1, 
                        soc_penalty = soc_penalty, lambda_soc = lambda_soc)
         
-
+        t_end_opti = time.time()
+        if (t_end_opti - t_start_opti) > 30:
+            z_value = z_value*0.9
+        else:
+            z_value = z_value
+            
     
     decisions = model.decisions[:-1]
     decisions = decisions.append(decisions_0.tail(1))

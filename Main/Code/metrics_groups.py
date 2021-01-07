@@ -8,6 +8,7 @@ Created on Mon Dec 21 14:03:49 2020
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import math
 import pandas as pd
 import seaborn as sns
 import numpy as np
@@ -17,6 +18,8 @@ from df_prepare import  prices_romande_energie
 folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/Full/'
 
 sns.set_style('whitegrid')
+
+img_path = 'C:/Users/Yann/Documents/EPFL/PDM/Images/'
 
 #%% DEFINITION
 objectives = ['cost', 'pv', 'peak']
@@ -34,10 +37,10 @@ for  o in objectives:
 
 
 
-methods = ['Perfect Foresight  \nCost', 
-           'MPC deterministic \nCost', 
-           'MPC stochastic \nExp: Cost \nExp: SOC', 
-           'MPC stochastic \nCVaR: Cost, \nExp: SOC',
+methods = ['Perfect Foresight  \ncost', 
+           'MPC deterministic \ncost', 
+           'MPC stochastic \nExp: cost \nExp: SOC', 
+           'MPC stochastic \nCVaR: cost, \nExp: SOC',
             'Perfect Foresight  \nPV ', 
            'MPC deterministic \nPV', 
            'MPC stochastic \nExp: PV \nExp: SOC', 
@@ -63,7 +66,7 @@ csv_code = '.csv'
 decisions = {n: pd.read_csv(folder_path+'results_'+n+csv_code, index_col = 0) for n in names}
 
 for n in names:
-    df = decisions[n][decisions[n].episode < 61]
+    df = decisions[n][decisions[n].episode < 36]
     new_index = pd.to_datetime(df.index, dayfirst = True)
     df.index = new_index
     decisions[n] = df
@@ -71,20 +74,20 @@ for n in names:
 algorithms = {names[i]: methods[i] for i in range(len(names))}
 
 #%%
-metrics = ['self_cons', 'soc_dep', 'Cost', 'peak_factor']
-metrics_title = ['PV self-consumption','SOC at Departure', 'Median Cost', '$PAR^{-1}$' ]
+metrics = ['self_cons', 'soc_dep', 'cost', 'peak_factor']
+metrics_title = ['PV self-consumption','SOC at Departure', 'Median Cost', 'APR' ]
 metrics_unit = ['%','%', 'CHF','%']
 metrics_props = {metrics[i]: {'title': metrics_title[i],'unit': metrics_unit[i]} for i in range(len(metrics))}
 
 labels_radar = {'self_cons': 'PV',
-          'Cost': 'Cost',
-          'peak_factor': '$PAR^{-1}$',
+          'cost': 'CP',
+          'peak_factor': 'APR',
           'soc_dep': 'SOC '}
 #%%
 group_code = {'cost': [], 'peak': [], 'pv': [],
           'opti':[], 'mpc_d': [], 'mpc_s': [], 'mpc_s_cvar': []}
 
-group_names = ['Objective: Cost','Objective: Peak Shaving', 'Objective: PV',
+group_names = ['Objective: cost','Objective: Peak Shaving', 'Objective: PV',
                'Perfect Foresight','MPC deterministic',
                'MPC stochastic, Expected', 'MPC stochastic, CVaR']
 groups = {}
@@ -122,6 +125,13 @@ for g_name in groups.keys():
         for a in algos:
             algos_specs[a]['Method'] = g_name
 
+#%%
+groups_mpc = {}
+
+groups_mpc['Objective: cost'] = ['v2g_'+m+'_cost' for m in methods_short[1:]]
+groups_mpc['Objective: PV'] = ['v2g_'+m+'_pv' for m in methods_short[1:]]
+groups_mpc['Objective: Peak Shaving'] = ['v2g_'+m+'_peak' for m in methods_short[1:]]
+
 #%% Functions
 def quick_stats(decisions, spot_prices):
     
@@ -142,6 +152,8 @@ def quick_stats(decisions, spot_prices):
     d = data.copy()
     
     df = d.groupby('episode').sum()
+    
+    df_sum = d.groupby('episode').sum()
     
     df_mean = data.groupby('episode').mean()
     
@@ -165,7 +177,9 @@ def quick_stats(decisions, spot_prices):
     
     df['self_cons'] = self_cons
 
-    df['Cost'] = df_med['cost']
+    df['cost'] = df_med['cost']
+    
+    # df['cost_tot'] = df_sum['cost']
     
     df['peak_factor'] = 100*df_mean.grid_bought / df_max.grid_bought
     
@@ -174,7 +188,7 @@ def quick_stats(decisions, spot_prices):
 def loss_ratio(stats_loss, quantile_low = 0.1, quantile_high = 0.9):
     
     df = stats_loss.copy()
-    df_med = df.median()
+    df_med = df.mean()
     
     best_algo = df_med[df_med == df_med.min()].index.values[0]
 
@@ -207,9 +221,9 @@ stats_df = {m: pd.DataFrame(data = {n: list(stats[n].loc[:,m] )
 #%% box plot metrics
 
 
-def ax_boxplot_metrics(ax, metric, g, ylim = None, leg = True):
+def ax_boxplot_metrics(ax, metric, g, algos, ylim = None, leg = True):
     # fig, axes = plt.subplots(len(metrics),1, sharex = True, figsize=(25,16))
-    algos = groups[g]
+    
     
     if 'Objective' in g:
         s = 'Method'
@@ -221,6 +235,7 @@ def ax_boxplot_metrics(ax, metric, g, ylim = None, leg = True):
     
     new_df = {}
     for n in algos:
+
         values = list(s_df[n].values)
         values.remove(max(values))
         new_df[algos_specs[n][s]] = values
@@ -235,7 +250,8 @@ def ax_boxplot_metrics(ax, metric, g, ylim = None, leg = True):
     ax.set_ylabel(metrics_props[m]['unit'])
     if leg == False:
         ax.set(xticklabels=[])
-
+    else:
+        ax.set(xticklabels = [algos_specs[a][s] for a in algos])
     ax.grid()
     if ylim is not None:
         ax.set_ylim(ylim)
@@ -244,9 +260,9 @@ def ax_boxplot_metrics(ax, metric, g, ylim = None, leg = True):
 
 #%% AX RADAR
 
-def ax_radar(ax, g, x_legend = 0.5, y_legend = -0.5, start = np.pi/4, leg = True):
+def ax_radar(ax, g, algos, x_legend = 0.5, y_legend = -0.5, start = np.pi/4, leg = True, lw = 2, fs = 15):
     
-    algos = groups[g]
+
     if 'Objective' in g:
         s = 'Method'
     else:
@@ -261,7 +277,7 @@ def ax_radar(ax, g, x_legend = 0.5, y_legend = -0.5, start = np.pi/4, leg = True
     angles=np.concatenate((angles,[angles[0]]))
     for m in metrics:
 
-        if m == 'Cost':
+        if m == 'cost':
             low, med, high = loss_ratio(stats_df[m])
             group_df_low[labels_radar[m]] = low[algos]
             group_df_high[labels_radar[m]] = high[algos]
@@ -286,7 +302,7 @@ def ax_radar(ax, g, x_legend = 0.5, y_legend = -0.5, start = np.pi/4, leg = True
         vals_med=np.concatenate((vals_med,[vals_med[0]]))
 
 
-        ax.plot(angles, vals_med, 'o-',  label = algos_specs[a][s], color = color_codes[a], linewidth = 2)
+        ax.plot(angles, vals_med, 'o-',  label = algos_specs[a][s], color = color_codes[a], linewidth = lw)
         ax.errorbar(angles, vals_med, yerr = errors_low,  uplims=True,color = color_codes[a])
         ax.errorbar(angles, vals_med, yerr = errors_high,  lolims=True,color = color_codes[a])
         
@@ -296,9 +312,9 @@ def ax_radar(ax, g, x_legend = 0.5, y_legend = -0.5, start = np.pi/4, leg = True
     
     ax.grid(True)
     if leg == True:
-        ax.legend(loc = 'lower center',bbox_to_anchor=(x_legend,y_legend), ncol = 1, fontsize = 14)
+        ax.legend(loc = 'lower center',bbox_to_anchor=(x_legend,y_legend), ncol = 1, fontsize = fs)
 
-    ax.set_xlabel('%', fontsize = 18)
+    ax.set_xlabel('%', fontsize = fs)
     ax.set_ylim([0,105])
     
     return ax
@@ -316,7 +332,7 @@ def ax_radar_by_metrics(ax, g, x_legend = 0.5, y_legend = -0.2, start = np.pi/4,
     
     for m in metrics:
     
-        if m == 'Cost':
+        if m == 'cost':
             _, med, _ = loss_ratio(stats_df[m][algos])
             
         else:
@@ -393,13 +409,10 @@ def plot_repartition(ax, decisions, g, variable, indices, labels, name = None, w
 
 #%%
 metrics_ylim =  {'self_cons': [0,105],
-          'Cost': None,
+          'cost': None,
           'peak_factor': None,
           'soc_dep': [0,105]}
 
-    
-
-    
 #%%
 labels_tot = ['PV', 'Grid',  'EV', 'Load']
 
@@ -462,17 +475,55 @@ def ax_pv_repartition(ax, g):
     return ax
 
 
+#%%
+group_plot = groups_mpc
+plot_reduce = True
+if plot_reduce:
+    for g in list(group_plot.keys()):
+        if 'Objective' in g:
+            s = 'Method'
+        else:
+            s = 'Objective'
+        
+        algos = group_plot[g]
+        fig = plt.figure(figsize=(16, 9), dpi = 800)
+        plt.suptitle(g, fontsize = 18)
+        ax1 = fig.add_subplot(1,2,1, polar = True)
+        ax_radar(ax1, g, algos,  leg = False, lw = 3, fs = 18)
+        
+        
+        ax3= fig.add_subplot(4,2,2)
+        ax4= fig.add_subplot(4,2,4)
+        ax5= fig.add_subplot(4,2,6)
+        ax6= fig.add_subplot(4,2,8)
+        
+        ax_box = [ax3, ax4, ax5, ax6]
+        
+        for i in range(len(ax_box)):
+            m = metrics[i]
+            ax = ax_box[i]
+
+            ax_boxplot_metrics(ax, m, g,algos, ylim = metrics_ylim[m], leg = False)
+        
+        ncol = 3
+        if len(algos) > 3:
+            ncol = int(len(algos)/2)
+        patches1 = [mpatches.Patch(color=color_codes[n], label=algos_specs[n][s]) for n in algos]
+        ax1.legend(handles=patches1, loc='upper center',ncol=ncol,bbox_to_anchor = (0.5,1.15), fontsize = 13) 
+        
+        fig.savefig(img_path+g.replace(': ','_')+'.png', dpi = 800)
+        
+        fig.show()
 
 #%%
-full_plot = False
+full_plot = True
 if full_plot:
-    for g in groups.keys():
+    for g in list(groups.keys()):
         algos = groups[g]
         fig = plt.figure(figsize=(28, 15), dpi = 500)
         plt.suptitle(g, fontsize = 18)
         ax1 = fig.add_subplot(1,4,1, polar = True)
-        ax_radar(ax1, g, leg = False)
-        
+        ax_radar(ax1, g,algos,  leg = False)
         
         ax3= fig.add_subplot(4,4,2)
         ax4= fig.add_subplot(4,4,6)
@@ -484,10 +535,12 @@ if full_plot:
         for i in range(len(ax_box)):
             m = metrics[i]
             ax = ax_box[i]
-            ax_boxplot_metrics(ax, m, g, ylim = metrics_ylim[m], leg = False)
+            if i == len(ax_box)-1:
+                leg = True
+            ax_boxplot_metrics(ax, m,  g,algos, ylim = metrics_ylim[m], leg = False)
             
         patches1 = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in algos]
-        ax1.legend(handles=patches1, loc='lower center',ncol=int(len(algos)/2), bbox_to_anchor = (0.5,-0.8)) 
+        ax1.legend(handles=patches1, loc='upper center',ncol=int(len(algos)/2),bbox_to_anchor = (0.5,1.5), fontsize = 16) 
         
         
         ax7= fig.add_subplot(2,4,3)
@@ -520,21 +573,128 @@ for i, o in enumerate(objectives):
         file_name = f'time_{name}'
         algo = f'v2g_{name}'
         file_inter = open(folder_path+file_name+'.pickle', 'rb')
-        time_algo[algorithms[algo]] = pickle.load(file_inter)[:60]
+        time_algo[algorithms[algo]] = pickle.load(file_inter)[:35]
+        print(name,len(time_algo[algorithms[algo]]))
         file_inter.close()
         
 #%%
 df_time = pd.DataFrame.from_dict(time_algo)
-fig, ax = plt.subplots(1,1,figsize = (16,9), dpi = 500)
+fig, ax = plt.subplots(1,1,figsize = (18,11), dpi = 600)
 sns.boxplot(data = df_time, ax = ax, palette = [color_codes[methods_aglo[n]] for n in methods])
-ax.set_ylabel('seconds')
+ax.set_ylabel('Sec.', fontsize = 15)
 ax.grid(True)
+ax.set_title('Time per episode', fontsize = 17)
 
 #%%
 # variables = ['pv_ev','pv_load','grid_ev','grid_load','ev_grid','y_buy','y_sell','y_ch','y_dis','avail','cost','self_cons','peak_factor']
+subm =  ['self_cons', 'cost', 'peak_factor']
+fig, axes = plt.subplots(1,len(subm),figsize = (18,8), dpi = 600, sharey = True)
+for k in range(len(subm)):
+    g = list(groups.keys())[k]
+    if 'Method' in g:
+        break
+    algos = groups[g]
+    new_df = stats[algos[0]][subm]
+    for i in range(1,len(algos)):
+        a = algos[i]
+        s = stats[a][subm]
+        new_df.append(s)
+    c = new_df.corr()
+    c.rename(index={m: labels_radar[m] for m in subm}, inplace = True)
+    c.rename(columns={m: labels_radar[m] for m in subm}, inplace = True)
+    
+    axes[k].set_title(g)
+    sns.heatmap(c,ax = axes[k], annot=True, annot_kws={"size":12} , linewidths=.5)
+#%%
+avail = np.unique(stats[names[0]]['avail'])
 
-# for s in stats:
-#     c = stats[s][variables].corr()
-#     plt.figure(figsize = (16,9))
-#     plt.title(s)
-#     sns.heatmap(c.loc[:,['cost','self_cons','peak_factor']], annot=True)
+bins = list(np.arange(11,30,4))
+bins.append(31)
+x = [np.round(0.1*i,2) for i in range(11)]
+
+
+
+ticks = np.arange(0,11,2.5)
+labels = [str(int(t)*10)+'%' for t in ticks]
+labels[0] = labels[0] + '\n' + 'Arr.'
+labels[-1] = labels[-1] + '\n' + 'Dep.'
+#plt.suptitle(f'SOC at arrival: {s_arr}%',fontsize = 18)
+for g in groups:
+    algos = groups[g]
+    fig, axes = plt.subplots(len(algos)+2,len(bins)-1, sharex = True, figsize=(16,11))
+    for i in range(len(bins)-1):
+        a_low = int(bins[i])
+    
+        a_high = int(bins[i+1])
+    
+        for j, n in enumerate(algos):
+            
+            decision = decisions[n]
+            lower = stats[n][stats[n].avail < a_high]
+            upper = lower[lower.avail >= a_low]
+            episodes = upper.index
+            
+            soc_array = np.zeros((len(episodes),len(x)))
+            pv_array = np.zeros((len(episodes),len(x)))
+            load_array = np.zeros((len(episodes),len(x)))
+            for k, e in enumerate(episodes):
+                ep = decision[decision.episode == int(e)]
+                td = list(ep.avail).index(0)
+                soc = ep.soc[:td+1]*100
+                pv = ep.pv[:td+1]/1000
+                load = ep.load[:td+1]/1000
+                
+                time_charging = ep.avail.sum()
+                t = np.dot(x,time_charging)
+                t = [math.floor(i) for i in t]
+    
+                quantiles_soc = soc[t]
+                quantiles_pv = pv[t]
+                quantiles_load = load[t]
+                
+                soc_array[k,:] = quantiles_soc
+                pv_array[k,:] = quantiles_pv
+                load_array[k,:] = quantiles_load
+    
+            df = pd.DataFrame(data = {int(x[q]*100): soc_array[:,q] for q in range(len(x))})
+        
+            sns.boxplot(data = df, ax = axes[j+2,i], orient = 'v', color = color_codes[n])
+            
+            df = pd.DataFrame(data = {int(x[q]*100): pv_array[:,q] for q in range(len(x))})
+        
+            sns.boxplot(data = df, ax = axes[0,i], orient = 'v', color = color_indices['PV'])
+            
+            df = pd.DataFrame(data = {int(x[q]*100): load_array[:,q] for q in range(len(x))})
+        
+            sns.boxplot(data = df, ax = axes[1,i], orient = 'v', color = color_indices['Load'])
+            
+            axes[j+2,i].grid()
+            
+            axes[j+2,i].set_xticks(ticks)
+            
+            if i > 0:
+                axes[j+2,i].set_yticklabels(' ')
+            
+            axes[j+2,0].set_ylabel('SOC [%]')
+            
+            axes[j+2,i].set_ylim([15,105])
+            
+            
+        
+        power = ['PV','Load']
+        
+        for k in range(2):
+            axes[k,i].grid()
+            axes[k,i].set_ylim([0,20])
+            if i > 0:
+                axes[k,i].set_yticklabels(' ')
+            axes[k,0].set_yticks(np.arange(0,21,10))
+            axes[k,0].set_ylabel(f'{power[k]} [kW]')
+        
+        
+        axes[4,i].set_xticklabels(labels)
+        axes[0,i].set_title(f'Charging time {a_low} - {a_high-1}h', fontsize = 14)  
+        
+    patches = [mpatches.Patch(color=color_codes[n], label=algorithms[n]) for n in names]
+    fig.legend(handles=patches, loc='lower center',ncol=int(len(names)/2))
+            

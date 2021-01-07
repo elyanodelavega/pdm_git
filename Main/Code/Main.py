@@ -40,7 +40,6 @@ def time_prevision_method(time_algo, method, episodes_left):
     
     time_left = average_time_per_episode_all*episodes_left
     
-    
     return int(time_left)
 #%%
 plot_split = True
@@ -167,7 +166,7 @@ warnings.filterwarnings('ignore', 'statsmodels.tsa.arima_model.ARIMA',
 warnings.filterwarnings("ignore")
 
 #%% Optimization
-MPC_opti = True  
+MPC_opti = True
 
 
 res_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/'
@@ -178,9 +177,9 @@ columns = ['pv', 'load', 'pv_ev', 'pv_load','pv_grid', 'grid_ev', 'grid_load','e
             'y_sell','y_ch','y_dis','soc',
         'avail', 'episode']
 
-lambda_soc = {'cost': 0.46,
-              'pv': 0.003,
-              'peak': 0.23}
+lambda_soc = {'cost': 0.47,
+              'pv': 0.004,
+              'peak': 0.25}
 
 ################################### PARAMETERS ########################################
 V2X = 1
@@ -189,7 +188,7 @@ save_mode = False
 soc_penalty = 1.2
 num_iter = 12
 
-objective_1 = 'cost'
+objective_1 = 'peak'
 speciality = '_'+objective_1
 
 
@@ -202,8 +201,8 @@ EV1 = EV(eta_EV_ch = 0.95,SOC_min_departure = 1)
 House1 = House()
 
 
-episode_start = 1
-n_episodes = 60
+episode_start = 42
+n_episodes = 19
 
 range_episodes = range(episode_start, episode_start + n_episodes)
 
@@ -212,7 +211,9 @@ range_episodes = range(episode_start, episode_start + n_episodes)
           
 ################################## NAMES #############################################
 names = ['opti', 'mpc_d', 'mpc_s',  'mpc_s_cvar']
-MPC_methods = ['mpc_d', 'mpc_s', 'mpc_s_cvar']
+
+
+MPC_methods = ['mpc_s_cvar', 'mpc_s']
 
 if V2X:
     names = ['v2g_'+n for n in names]
@@ -229,12 +230,18 @@ MPC_parameters = {'mpc_d': None, 'mpc_s': None,
                                 'alpha_soc': 0}}
 
 time_algo = {m:[] for m in MPC_methods}
+ep_start = {'mpc_s_cvar': 42, 'mpc_s': 1}
+n_ep = {'mpc_s_cvar': 19, 'mpc_s': 60}
 
 if MPC_opti:
 
     for i,m in enumerate(MPC_methods):
         
         name = m
+        
+        episode_start = ep_start[m]
+        n_episodes = n_ep[m]
+        range_episodes = range(episode_start, episode_start + n_episodes)
         
         predictions_load = {e: None for e in range_episodes}
         
@@ -307,7 +314,7 @@ if MPC_opti:
                 results = results.append(decisions)
             
         
-            results.to_csv(res_folder_path+f'results{prefix}{name}{speciality}.csv')
+            results.to_csv(res_folder_path+f'results_{prefix}{name}{speciality}.csv')
             file_inter = open(res_folder_path+f'time_{name}{speciality}.pickle', 'wb') 
             pickle.dump(time_algo[m], file_inter)
             file_inter.close()
@@ -325,7 +332,7 @@ if MPC_opti:
 
 #%% Optimization Fully Deterministic
 
-opti = True   
+opti = False   
 
 
 res_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/'
@@ -340,7 +347,7 @@ save_mode = False
 objective_1 = 'cost'
 speciality = '_'+objective_1
 soc_penalty = 1.2
-lambda_soc = np.arange(0.3,0.5, 0.02)
+lambda_soc = np.arange(0.36,0.48, 0.02)
 
 
 if semi_dynamic_pricing:
@@ -350,8 +357,8 @@ EV1 = EV(eta_EV_ch = 0.95,SOC_min_departure = 1)
 House1 = House()
 
 
-episode_start = 1
-n_episodes = 60
+episode_start = 42
+n_episodes = 19
 
 range_episodes = range(episode_start, episode_start + n_episodes)
 
@@ -376,7 +383,7 @@ else:
 #time_algo = {m:[] for m in lambda_soc.keys()}
 if opti:
     for l in lambda_soc:
-        obj = 'peak'
+        obj = 'cost'
         objective_1 = obj
         
         speciality = '_'+objective_1

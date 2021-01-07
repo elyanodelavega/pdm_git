@@ -4,22 +4,48 @@ Created on Thu Dec  3 09:37:54 2020
 
 @author: Yann
 """
-img_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Images/'
-
-res_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/cost_soc/'
-
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import pandas as pd
 import pickle
+import seaborn as sns
+import numpy as np
 
-columns = ['pv', 'load', 'pv_ev', 'pv_load','pv_grid', 'grid_ev', 'grid_load', 'soc',
-       'avail', 'episode']
-methods = ['Fully deterministic',  'MPC deterministic', 
-           'MPC stochastic',
-           'MPC stochastic CVaR cost','MPC stochastic CVaR soc']
-methods = ['Fully deterministic cost', 'Fully deterministic pv']
+from df_prepare import  prices_romande_energie
 
-names = ['v2g_opti', 'v2g_mpc_d', 'v2g_mpc_s', 'v2g_mpc_s_cvar_cost', 'v2g_mpc_s_cvar_soc']
-names = ['v2g_opti', 'v2g_opti_pv']
+res_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/V2G/Results/Full/'
+
+sns.set_style('whitegrid')
+
+img_folder_path = 'C:/Users/Yann/Documents/EPFL/PDM/Images/'
+
+#%% DEFINITION
+objectives = ['cost', 'pv', 'peak']
+methods_short = ['opti', 'mpc_d', 'mpc_s', 'mpc_s_cvar']
+palette = sns.color_palette(n_colors = len(objectives)*len(methods_short) + 4)
+
+names = []
+c = 0
+for  o in objectives:
+    for m in methods_short:
+        
+        names.append(f'v2g_{m}_{o}')
+        
+methods = ['Perfect Foresight,  cost', 
+           'MPC deterministic , cost', 
+           'MPC stochastic , Exp: cost , Exp: SOC', 
+           'MPC stochastic , CVaR: cost, , Exp: SOC',
+            'Perfect Foresight,  PV ', 
+           'MPC deterministic , PV', 
+           'MPC stochastic , Exp: PV , Exp: SOC', 
+           'MPC stochastic , CVaR: PV, , Exp: SOC',
+           'Perfect Foresight,  APR', 
+           'MPC deterministic , APR ', 
+           'MPC stochastic , Exp: APR , Exp: SOC', 
+           'MPC stochastic , CVaR: APR, , Exp: SOC']
+
+algorithms = {names[i]: methods[i] for i in range(len(names))}
+
 decisions = {}
 
 predictions_load = {}
@@ -53,7 +79,48 @@ for i,m in enumerate(methods):
         
         file_full_res = open(res_folder_path+f'full_res_{names[i]}_{n_episodes}.pickle', 'rb') 
         MPC_results[m] = pickle.load( file_full_res)
+
+#%%
+group_code = {'cost': [], 'peak': [], 'pv': [],
+          'opti':[], 'mpc_d': [], 'mpc_s': [], 'mpc_s_cvar': []}
+
+group_names = ['Objective: cost','Objective: Peak Shaving', 'Objective: PV',
+               'Perfect Foresight','MPC deterministic',
+               'MPC stochastic, Expected', 'MPC stochastic, CVaR']
+groups = {}
+for n in names:
+    
+    for i,g in enumerate(group_code.keys()):
         
+        if g in n:
+            
+            group_code[g].append(n)
+            
+        groups[group_names[i]] = group_code[g]
+        
+algos_mpc_s =  list(groups['MPC stochastic, Expected'])
+for a in algos_mpc_s:    
+    if 'cvar' in a:
+        algos_mpc_s.remove(a)
+
+groups['MPC stochastic, Expected'] = algos_mpc_s
+
+
+algos_specs = {n: {'Objective': None, 'Method': None} for n in names}
+
+for g_name in groups.keys():
+
+    algos = groups[g_name]
+    
+    if 'Objective' in g_name:
+        
+        for a in algos:
+            algos_specs[a]['Objective'] = g_name
+            
+    else:
+
+        for a in algos:
+            algos_specs[a]['Method'] = g_name        
 #%%
 save = False
 
@@ -67,7 +134,15 @@ if save:
         img_paths[m] = img_path
         os.mkdir(img_path)
 
-    
+
+#%%
+from plot_res import plot_results_comparison
+n_episodes = [[6,7],[8,9], [10,11], [12,13]]
+for e in n_episodes:
+    for g in groups:
+        algos = groups[g]
+        dec_g = {algorithms[a]: decisions[algorithms[a]] for a in algos}
+        plot_results_comparison(g, dec_g, episodes = e)
 #%%
 from plot_res import plot_results_deterministic
 
@@ -154,9 +229,8 @@ for ep in range(3,6):
         to_video(folder)
         
 #%%
-from plot_res import plot_results_comparison
-plot_results_comparison(decisions, episodes = [1,2,3])
-plot_results_comparison(decisions, episodes = [4,5,6])
-plot_results_comparison(decisions, episodes = [7,8,9])
-plot_results_comparison(decisions, episodes = [10,11,12])
-plot_results_comparison(decisions, episodes = [13,14,15])
+
+# plot_results_comparison(decisions, episodes = [4,5,6])
+# plot_results_comparison(decisions, episodes = [7,8,9])
+# plot_results_comparison(decisions, episodes = [10,11,12])
+# plot_results_comparison(decisions, episodes = [13,14,15])

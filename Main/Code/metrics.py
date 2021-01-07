@@ -158,8 +158,8 @@ methods = ['Perfect Foresight  \nExp: Cost \nExp: SOC',  'MPC deterministic \nEx
             'MPC stochastic \nExp: PV, \nCVaR 75%: SOC ']
 
 import random
-range_w =  np.arange(0.3,0.5, 0.02)
-obj = 'peak'
+range_w =  np.arange(0.36,0.48, 0.02)
+obj = 'cost'
 color_codes = {f'opti_{obj}_{np.round(i,5)}': palette[random.randint(0, 9)] for j,i in enumerate(range_w)}
 
 methods = [f'{np.round(i,5)}' for j,i in enumerate(range_w)]
@@ -191,13 +191,13 @@ n_episodes = len(stats[benchmark])
 
 range_episodes = range(int(stats[benchmark].index[0]), int(stats[benchmark].index[-1] + 1))
 
-metrics_title = ['PV self-consumption','SOC at Departure', 'Median Loss', 'Peak factor' ]
+metrics_title = ['PV self-consumption','SOC at Departure', 'Median Loss', 'APR' ]
 metrics_label = ['%','%', 'CHF','%']
 metrics_props = {metrics[i]: {'title': metrics_title[i],'label': metrics_label[i]} for i in range(len(metrics))}
 
 
 #%% box plot variation
-objectives = ['peak_factor', 'soc_dep',]
+objectives = ['Loss', 'soc_dep',]
 title = metrics_props[objectives[0]]['title']
 fig, axes = plt.subplots(len(objectives),1, figsize=(16,9), sharex = True, dpi = 600)
 plt.suptitle(f' Relative comparison with {methods[0]},{title}')

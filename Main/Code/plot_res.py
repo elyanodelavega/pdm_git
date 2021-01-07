@@ -10,7 +10,7 @@ import seaborn as sns
 import math
 import pandas as pd
 
-sns.set_style('darkgrid',{'legend.frameon':True})
+sns.set_style('whitegrid',{'legend.frameon':True})
 palette = sns.color_palette()
 plt.rcParams.update({'font.size': 14})
 scale_PV = 10000/2835
@@ -477,9 +477,10 @@ def plot_results_deterministic(decisions, episodes,method, figname = None, img_p
         fig.savefig(img_path + figname )
         plt.close(fig)
         
-def plot_results_comparison(decisions, episodes, figname = None, img_path = None):
+def plot_results_comparison(title, decisions, episodes, figname = None, img_path = None):
     
-    fig, axes = plt.subplots(len(decisions)+1,1, sharex=True, figsize=(20,13))
+    fig, axes = plt.subplots(len(decisions)+1,1, sharex=True, figsize=(20,13), dpi = 500)
+    plt.suptitle(title)
     for k,m in enumerate(decisions.keys()):
         df = decisions[m]
         dataset = df[df.episode.isin(episodes)]
@@ -559,7 +560,7 @@ def plot_results_comparison(decisions, episodes, figname = None, img_path = None
             handles_1, labels_1 = axes[0].get_legend_handles_labels()
             handles_2, labels_2 = [(a + b) for a, b in zip(axes[1].get_legend_handles_labels(),
                                                     ax2.get_legend_handles_labels())]
-            axes[0].legend(handles_1, labels_1, loc='upper center',facecolor='white',bbox_to_anchor=(0.5,1.8), ncol = 2)
+            axes[0].legend(handles_1, labels_1, loc='upper right',facecolor='white', ncol = 2)
             fig.legend(handles_2, labels_2, loc='lower center', facecolor='white', ncol = 3)
     
     if figname:
